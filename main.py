@@ -1,33 +1,33 @@
 """
-â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-â•‘   BB SCANNER  â€”  INSTITUTIONAL GRADE                             â•‘
-â•‘   Binance Perpetual Futures  |  5m  |  BB(200, SD 1)             â•‘
-â•‘   Paper Trading: 30x Leverage  |  Discord Webhook Alerts         â•‘
-â•‘   Runs on:  Windows / Linux / macOS / Termux (Android)           â•‘
-â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+╔═══════════════════════════════════════════════════════════════════╗
+║   BB SCANNER  –  INSTITUTIONAL GRADE                             ║
+║   Binance Perpetual Futures  |  5m  |  BB(200, SD 1)             ║
+║   Paper Trading: 30x Leverage  |  Discord Webhook Alerts         ║
+║   Runs on:  Windows / Linux / macOS / Termux (Android)           ║
+╚═══════════════════════════════════════════════════════════════════╝
 
 STRATEGY
-â”€â”€â”€â”€â”€â”€â”€â”€
-LONG  â€” Lower Band Recross: price closes below lower BB â†’ next candle closes back above â†’ BUY
-SHORT â€” Upper Band Recross: price closes above upper BB â†’ next candle closes back below â†’ SELL
+────────
+LONG  – Lower Band Recross: price closes below lower BB → next candle closes back above → BUY
+SHORT – Upper Band Recross: price closes above upper BB → next candle closes back below → SELL
 No middle band trades.
 
 EXIT
-â”€â”€â”€â”€
-Target 1  â†’ Fibonacci Extension 1.272 (primary)
-Target 2  â†’ Fibonacci Extension 1.618 (secondary)
-Fallback  â†’ Upper / Lower Bollinger Band
-Stop Loss â†’ Min (Long) or Max (Short) of signal candle & previous candle
+────
+Target 1  → Fibonacci Extension 1.272 (primary)
+Target 2  → Fibonacci Extension 1.618 (secondary)
+Fallback  → Upper / Lower Bollinger Band
+Stop Loss → Min (Long) or Max (Short) of signal candle & previous candle
 
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
- INSTALL  â€”  PC (Windows / Linux / macOS)
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+═══════════════════════════════════════════════════════════════════
+ INSTALL  –  PC (Windows / Linux / macOS)
+═══════════════════════════════════════════════════════════════════
    pip install pandas numpy requests matplotlib
-   python bb_scanner.py
+   python main.py
 
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
- INSTALL  â€”  TERMUX (Android, runs 24/7 on phone)
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+═══════════════════════════════════════════════════════════════════
+ INSTALL  –  TERMUX (Android, runs 24/7 on phone)
+═══════════════════════════════════════════════════════════════════
  1. Install Termux from F-Droid  (the Play Store one is broken).
  2. Install Termux:API and Termux:Boot from F-Droid (optional but
     Termux:Boot lets the scanner auto-start when phone reboots).
@@ -38,23 +38,23 @@ Stop Loss â†’ Min (Long) or Max (Short) of signal candle & previous candle
       pip install --upgrade pip
       pip install pandas numpy requests
       # matplotlib is OPTIONAL on Termux. Charts auto-disable if
-      # not installed â€” Discord alerts still fire as text only.
+      # not installed – Discord alerts still fire as text only.
 
- 4. Put bb_scanner.py somewhere persistent, e.g. ~/scanner/
+ 4. Put main.py somewhere persistent, e.g. ~/scanner/
       mkdir -p ~/scanner && cd ~/scanner
-      # copy bb_scanner.py here (via Termux storage / scp / etc.)
+      # copy main.py here (via Termux storage / scp / etc.)
 
  5. Keep the CPU awake so Android does not freeze the process:
       pkg install termux-api -y
       termux-wake-lock          # release with: termux-wake-unlock
 
  6. Run:
-      python bb_scanner.py
+      python main.py
 
  7. Want it to survive Termux being closed? Run inside tmux:
       pkg install tmux -y
       tmux new -s scanner
-      python bb_scanner.py
+      python main.py
       # detach: Ctrl+B then D     reattach: tmux attach -t scanner
 
  8. Auto-start on boot (Termux:Boot installed):
@@ -63,12 +63,12 @@ Stop Loss â†’ Min (Long) or Max (Short) of signal candle & previous candle
       #!/data/data/com.termux/files/usr/bin/sh
       termux-wake-lock
       cd ~/scanner
-      python bb_scanner.py >> scanner.log 2>&1
+      python main.py >> scanner.log 2>&1
       EOF
       chmod +x ~/.termux/boot/start-scanner
 """
 
-# â”€â”€â”€ STDLIB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── STDLIB ──────────────────────────────────────────────────────────────────
 import io, json, os, sys, time
 from datetime import datetime, timezone
 
@@ -80,12 +80,12 @@ try:
 except Exception:
     pass
 
-# â”€â”€â”€ THIRD-PARTY (required) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── THIRD-PARTY (required) ──────────────────────────────────────────────────
 import numpy  as np
 import pandas as pd
 import requests
 
-# â”€â”€â”€ matplotlib is OPTIONAL (skip on Termux if it won't install) â”€
+# ─── matplotlib is OPTIONAL (skip on Termux if it won't install) ─
 try:
     import matplotlib
     matplotlib.use("Agg")
@@ -97,9 +97,9 @@ except Exception as _e:
     print(f"  [INFO] matplotlib unavailable ({_e.__class__.__name__}). "
           f"Discord alerts will be sent without chart images.")
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘   USER CONFIG  â†  only section you need to edit
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ①   USER CONFIG  ←  only section you need to edit
+# ═══════════════════════════════════════════════════════════════════
 DISCORD_WEBHOOK  = (
     "https://discord.com/api/webhooks/1494071862609575948/"
     "G04AVF9M0nCp0FYPNDgBwyPzUee-9IMQFxr88uH88euQmaD4JM4LbV1cTofMqGqiz3fX"
@@ -113,7 +113,7 @@ SCAN_INTERVAL    = 900          # seconds between full scans (900 = 15 min)
 LOOKBACK_WINDOW  = 600          # look back 10 min (600s) to check if conditions matched
 REQUEST_DELAY    = 0.15         # seconds between API calls (rate-limit safe)
 SWING_LOOKBACK   = 60           # candles back to find swing high / low
-TOUCH_TOL        = 0.0025       # 0.25 % â€” band "touch" tolerance
+TOUCH_TOL        = 0.0025       # 0.25 % – band "touch" tolerance
 
 # Paper trading
 INITIAL_BALANCE  = 10_000.0     # starting virtual USDT
@@ -138,22 +138,22 @@ if not os.path.exists(CHARTS_DIR):
         print(f"  [WARN] Could not create charts folder: {e}. Charts will save to script dir.")
         CHARTS_DIR = _SCRIPT_DIR
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘¡  EXCHANGE  â€”  direct REST (bypasses ccxt load_markets which
+# ═══════════════════════════════════════════════════════════════════
+#  ②  EXCHANGE  –  direct REST (bypasses ccxt load_markets which
 #                  also hits dapi.binance.com coin-futures and
 #                  times-out in regions where that endpoint is blocked)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
 FAPI_BASE = "https://fapi.binance.com"      # USDT-margined perpetuals only
 
 _SESSION = requests.Session()
 _SESSION.headers.update({"Accept": "application/json"})
 _SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})  # Better Cloudflare handling
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘¢  SIGNAL COOLDOWN & VALIDATION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-_last_signal: dict[str, float] = {}   # symbol â†’ epoch
-_signal_cache: dict[str, dict] = {}  # symbol â†’ {signal, timestamp, entry_price}
+# ═══════════════════════════════════════════════════════════════════
+#  ③  SIGNAL COOLDOWN & VALIDATION
+# ═══════════════════════════════════════════════════════════════════
+_last_signal: dict[str, float] = {}   # symbol → epoch
+_signal_cache: dict[str, dict] = {}  # symbol → {signal, timestamp, entry_price}
 
 def on_cooldown(sym: str) -> bool:
     return (time.time() - _last_signal.get(sym, 0)) < SIGNAL_COOLDOWN
@@ -173,12 +173,12 @@ def is_signal_valid(sym: str, current_price: float) -> bool:
     cached = _signal_cache[sym]
     age = time.time() - cached["timestamp"]
     
-    # â‘  Signal must be fresh (< 10 min old)
+    # ①  Signal must be fresh (< 10 min old)
     if age > SIGNAL_FRESHNESS:
         print(f"    [REJECT] {sym}: Signal too old ({age:.0f}s > {SIGNAL_FRESHNESS}s)")
         return False
     
-    # â‘¡ Entry price must not have slipped too far (>2%)
+    # ②  Entry price must not have slipped too far (>2%)
     entry = cached["entry_price"]
     slippage = abs(current_price - entry) / entry
     if slippage > SIGNAL_SLIPPAGE_PCT:
@@ -197,13 +197,13 @@ def cache_signal(sym: str, sig: dict, current_price: float):
         "entry_price": current_price
     }
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘£  DATA
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ④  DATA
+# ═══════════════════════════════════════════════════════════════════
 def get_symbols() -> list[str]:
     """
     Fetch all active USDT-margined perpetual symbols directly from
-    fapi.binance.com/fapi/v1/exchangeInfo â€” no dapi.binance.com call,
+    fapi.binance.com/fapi/v1/exchangeInfo – no dapi.binance.com call,
     no ccxt load_markets() timeout.
     """
     url  = f"{FAPI_BASE}/fapi/v1/exchangeInfo"
@@ -221,7 +221,7 @@ def get_symbols() -> list[str]:
 
 
 def _raw_symbol(ccxt_sym: str) -> str:
-    """BTC/USDT  â†’  BTCUSDT  (fapi endpoint format)"""
+    """BTC/USDT  →  BTCUSDT  (fapi endpoint format)"""
     return ccxt_sym.replace("/", "")
 
 
@@ -264,9 +264,9 @@ def fetch_df(symbol: str) -> pd.DataFrame | None:
     except Exception:
         return None
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘¤  INDICATORS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ⑤  INDICATORS
+# ═══════════════════════════════════════════════════════════════════
 def add_bb(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["mid"]   = df["close"].rolling(BB_PERIOD).mean()
@@ -281,16 +281,16 @@ def sw_high(df: pd.DataFrame) -> float:
 def sw_low(df: pd.DataFrame) -> float:
     return float(df.iloc[-(SWING_LOOKBACK + 1):-1]["low"].min())
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘¥  SIGNAL DETECTION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ⑥  SIGNAL DETECTION
+# ═══════════════════════════════════════════════════════════════════
 def _build(direction, condition, entry, sl):
     return {"direction": direction, "condition": condition,
             "entry": round(float(entry), 8), "sl": round(float(sl), 8)}
 
 def long_c1(df) -> dict | None:
-    """Lower Band Recross â†’ Long
-    Price closes below lower band, then next candle closes back above it â†’ BUY"""
+    """Lower Band Recross → Long
+    Price closes below lower band, then next candle closes back above it → BUY"""
     s, p, c = df.iloc[-2], df.iloc[-3], df.iloc[-1]
     if (p["close"] <  p["lower"]   # prev candle closed below lower band
             and s["close"] >  s["lower"]   # signal candle closed back above lower band
@@ -300,8 +300,8 @@ def long_c1(df) -> dict | None:
     return None
 
 def short_c1(df) -> dict | None:
-    """Upper Band Recross â†’ Short
-    Price closes above upper band, then next candle closes back below it â†’ SELL"""
+    """Upper Band Recross → Short
+    Price closes above upper band, then next candle closes back below it → SELL"""
     s, p, c = df.iloc[-2], df.iloc[-3], df.iloc[-1]
     if (p["close"] >  p["upper"]   # prev candle closed above upper band
             and s["close"] <  s["upper"]   # signal candle closed back below upper band
@@ -310,7 +310,7 @@ def short_c1(df) -> dict | None:
                       c["close"], max(s["high"], p["high"]))
     return None
 
-# â”€â”€ Band Touch Momentum Logic (NEW) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Band Touch Momentum Logic (NEW) ────────────────────────────────────────────
 def long_band_touch(df) -> dict | None:
     """Upper Band Breakout Pullback → Long
     Step 1: Price breaks ABOVE upper band (previous highs)
@@ -389,7 +389,7 @@ def short_band_touch(df) -> dict | None:
 
 CHECKERS = [long_band_touch, short_band_touch]
 
-# â”€â”€ Targets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Targets ───────────────────────────────────────────────────────────────────
 def build_targets(df: pd.DataFrame, sig: dict) -> dict:
     e  = sig["entry"]
     sl = sig["sl"]
@@ -420,15 +420,15 @@ def build_targets(df: pd.DataFrame, sig: dict) -> dict:
             "swing_low":  round(sl_, 8),
         }
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘¦  PAPER TRADER
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ⑦  PAPER TRADER
+# ═══════════════════════════════════════════════════════════════════
 class PaperTrader:
 
     def __init__(self):
         self._load()
 
-    # â”€â”€ persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── persistence ──────────────────────────────────────────────────────────
     def _load(self):
         if os.path.exists(TRADES_FILE):
             with open(TRADES_FILE) as f:
@@ -449,7 +449,7 @@ class PaperTrader:
                        "closed_trades": self.closed_trades,
                        "counter":       self.counter}, f, indent=2)
 
-    # â”€â”€ open â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── open ─────────────────────────────────────────────────────────────────
     def open_trade(self, symbol: str, sig: dict, targets: dict) -> dict | None:
         e  = sig["entry"]
         sl = sig["sl"]
@@ -489,7 +489,7 @@ class PaperTrader:
         self._save()
         return trade
 
-    # â”€â”€ mark-to-market & auto-close â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── mark-to-market & auto-close ──────────────────────────────────────────
     def update(self, prices: dict, df_dict: dict = None) -> list[dict]:
         """Update trades and check for band-touch exits.
         
@@ -566,7 +566,7 @@ class PaperTrader:
         self._save()
         return closed
 
-    # â”€â”€ stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── stats ─────────────────────────────────────────────────────────────────
     def stats(self) -> dict:
         wins  = [t for t in self.closed_trades if t.get("rpnl", 0) > 0]
         loss  = [t for t in self.closed_trades if t.get("rpnl", 0) <= 0]
@@ -585,9 +585,9 @@ class PaperTrader:
             "ret_pct":   round((self.balance - INITIAL_BALANCE) / INITIAL_BALANCE * 100, 2),
         }
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘§  CHART  (dark theme, professional)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ⑧  CHART  (dark theme, professional)
+# ═══════════════════════════════════════════════════════════════════
 BG      = "#0d1117"
 BULL    = "#26a69a"
 BEAR    = "#ef5350"
@@ -621,7 +621,7 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
         a.yaxis.set_label_position("right")
         a.yaxis.tick_right()
 
-    # â”€â”€ Bollinger Bands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Bollinger Bands ──────────────────────────────────────────────────────
     ax.fill_between(xs, plot["upper"], plot["lower"],
                     color=BB_CLR, alpha=0.06, zorder=1)
     ax.plot(xs, plot["upper"], color=BB_CLR, lw=1.3, label=f"Upper BB", zorder=2)
@@ -629,7 +629,7 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
     ax.plot(xs, plot["lower"], color=BB_CLR, lw=1.0, ls="--",
             label="Lower BB", alpha=0.8, zorder=2)
 
-    # â”€â”€ Candles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Candles ───────────────────────────────────────────────────────────────
     for i, row in plot.iterrows():
         col = BULL if row["close"] >= row["open"] else BEAR
         ax.plot([i, i], [row["low"], row["high"]], color=col, lw=0.9, zorder=3)
@@ -637,18 +637,18 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
                bottom=min(row["open"], row["close"]),
                color=col, width=0.7, zorder=4, alpha=0.95)
 
-    # â”€â”€ Volume â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Volume ────────────────────────────────────────────────────────────────
     vcols = [BULL if plot.iloc[i]["close"] >= plot.iloc[i]["open"] else BEAR
              for i in range(n)]
     axv.bar(xs, plot["volume"], color=vcols, alpha=0.65, width=0.7)
     axv.set_ylabel("Volume", color=FG, fontsize=8)
 
-    # â”€â”€ Signal marker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Signal marker ─────────────────────────────────────────────────────────
     si = n - 2
     is_long = d == "LONG"
     y0 = plot.iloc[si]["low"]  * 0.9965 if is_long else plot.iloc[si]["high"] * 1.0035
     ytext = y0 * 0.993 if is_long else y0 * 1.007
-    lbl   = "â–²  LONG"  if is_long else "â–¼  SHORT"
+    lbl   = "▲  LONG"  if is_long else "▼  SHORT"
     mcol  = "#22c55e"  if is_long else "#ef4444"
     ax.annotate(
         lbl, xy=(si, y0), xytext=(si, ytext),
@@ -658,7 +658,7 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
         zorder=10,
     )
 
-    # â”€â”€ Level lines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Level lines ───────────────────────────────────────────────────────────
     def hline(y, color, label, ls="--", lw=1.0):
         if y is None:
             return
@@ -674,7 +674,7 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
     hline(tgt.get("tp2"), "#4ade80", "TP2 1.618",    lw=0.9, ls="-.")
     hline(tgt["fallback"], "#60a5fa", "Fallback BB",  lw=0.9, ls=":")
 
-    # â”€â”€ X axis labels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── X axis labels ─────────────────────────────────────────────────────────
     step = max(1, n // 10)
     plt.setp(ax.get_xticklabels(), visible=False)
     axv.set_xticks(range(0, n, step))
@@ -683,15 +683,15 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
         fontsize=7, color=FG
     )
 
-    # â”€â”€ Legend & Title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Legend & Title ────────────────────────────────────────────────────────
     ax.legend(loc="upper left", facecolor="#161b22", labelcolor=FG,
               fontsize=8.5, framealpha=0.9, edgecolor=GRID)
     fig.suptitle(
-        f"  {symbol}   Â·   BB({BB_PERIOD}, {BB_SD})   Â·   {TIMEFRAME}   Â·   {sig['condition']}",
+        f"  {symbol}   ·   BB({BB_PERIOD}, {BB_SD})   ·   {TIMEFRAME}   ·   {sig['condition']}",
         color=WHITE, fontsize=12, fontweight="bold", x=0.01, ha="left", y=0.99
     )
 
-    # tight_layout is incompatible with GridSpec + sharex axes â€” use subplots_adjust instead
+    # tight_layout is incompatible with GridSpec + sharex axes – use subplots_adjust instead
     fig.subplots_adjust(left=0.03, right=0.88, top=0.96, bottom=0.07, hspace=0.03)
     buf = io.BytesIO()
     # Save without bbox_inches to avoid conflicts with subplots_adjust
@@ -700,10 +700,10 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
     buf.seek(0)
     return buf.read()
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘¨  DISCORD  â€”  institutional monospace style, no emojis
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-_SEP  = "â”€" * 44        # section divider inside code blocks
+# ═══════════════════════════════════════════════════════════════════
+#  ⑨  DISCORD  –  institutional monospace style, no emojis
+# ═══════════════════════════════════════════════════════════════════
+_SEP  = "─" * 44        # section divider inside code blocks
 _W    = 18              # label column width for alignment
 
 def _kv(label: str, value: str) -> str:
@@ -713,7 +713,7 @@ def _kv(label: str, value: str) -> str:
 def _rr(entry, target, sl) -> str:
     risk = abs(entry - sl)
     if not risk or target is None:
-        return "â€”"
+        return "—"
     return f"{abs(target - entry) / risk:.2f}x R:R"
 
 def _strip_attachment_images(payload: dict) -> dict:
@@ -809,7 +809,7 @@ def _post_chart_only(symbol: str, sig: dict, chart: bytes):
     
     # Use the exact approach from azalyst that WORKS
     embed = {
-        "title": f"ðŸ“Š {sig['direction']} {pair} | {sig['condition']}",
+        "title": f"📊 {sig['direction']} {pair} | {sig['condition']}",
         "color": 2263127 if sig["direction"] == "LONG" else 15728640,  # green or red
         "description": f"Signal: {sig['condition']}\nEntry: {sig['entry']}\nStop Loss: {sig['sl']}",
         "timestamp": datetime.now(timezone.utc).isoformat()
@@ -828,7 +828,7 @@ def _post_chart_only(symbol: str, sig: dict, chart: bytes):
         )
         print(f"  [DEBUG] Chart upload response: HTTP {r.status_code}")
         if r.status_code == 200 or r.status_code == 204:
-            print(f"  âœ… Chart sent successfully to Discord")
+            print(f"  ✅ Chart sent successfully to Discord")
         else:
             print(f"  ! Chart upload returned HTTP {r.status_code}: {r.text[:200]}")
             r.raise_for_status()
@@ -838,14 +838,14 @@ def _post_chart_only(symbol: str, sig: dict, chart: bytes):
 
 def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
                                trade: dict, stats: dict, chart_bytes: bytes | None):
-    """NEW SIGNAL alert â€” detailed trade card + standalone chart."""
+    """NEW SIGNAL alert – detailed trade card + standalone chart."""
     d        = sig["direction"]
     is_long  = d == "LONG"
     color    = 0x22c55e if is_long else 0xef4444
     e, sl    = sig["entry"], sig["sl"]
     rsk_pct  = abs(e - sl) / e * 100
-    tp1_str  = str(tgt.get("tp1") or "â€”")
-    tp2_str  = str(tgt.get("tp2") or "â€”")
+    tp1_str  = str(tgt.get("tp1") or "—")
+    tp2_str  = str(tgt.get("tp2") or "—")
     ts       = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
     pair     = symbol.replace("/USDT", "") + " / USDT"
 
@@ -904,7 +904,7 @@ def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
 
 
 def discord_close(trade: dict, stats: dict):
-    """Trade closed â€” WIN or LOSS."""
+    """Trade closed – WIN or LOSS."""
     rpnl   = trade.get("rpnl", 0)
     color  = 0x22c55e if rpnl > 0 else 0xef4444
     result = "WIN" if rpnl > 0 else "LOSS"
@@ -971,7 +971,7 @@ def discord_summary(trader: PaperTrader):
     _sl   = s["losses"]
 
     body = "\n".join([
-        "  BB SCANNER PAPER PORTFOLIO  â€”  HOURLY REPORT",
+        "  BB SCANNER PAPER PORTFOLIO  –  HOURLY REPORT",
         f"  {ts}",
         f"  {_SEP}",
         f"  {_kv('Balance',       f'$ {_sb:>12,.2f}')}",
@@ -1005,7 +1005,7 @@ def discord_startup(n_symbols: int, balance: float):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
 
     body = "\n".join([
-        "  BB SCANNER  â€”  SYSTEM ACTIVE",
+        "  BB SCANNER  –  SYSTEM ACTIVE",
         f"  {ts}",
         f"  {_SEP}",
         f"  {_kv('Strategy',       f'BB({BB_PERIOD},{BB_SD})  |  {TIMEFRAME}')}",
@@ -1016,12 +1016,12 @@ def discord_startup(n_symbols: int, balance: float):
         f"  {_kv('Start balance',  f'$ {balance:>12,.2f}')}",
         f"  {_SEP}",
         "  SIGNAL CONDITIONS",
-        "  LONG  : Lower Band Recross (closed below â†’ closes back above lower BB)",
-        "  SHORT : Upper Band Recross (closed above â†’ closes back below upper BB)",
+        "  LONG  : Lower Band Recross (closed below → closes back above lower BB)",
+        "  SHORT : Upper Band Recross (closed above → closes back below upper BB)",
         f"  {_SEP}",
         "  SIGNAL VALIDATION (NEW)",
-        f"  â€¢ Signal freshness: {SIGNAL_FRESHNESS//60} min max age",
-        f"  â€¢ Price slippage tolerance: {SIGNAL_SLIPPAGE_PCT*100:.1f}%",
+        f"  • Signal freshness: {SIGNAL_FRESHNESS//60} min max age",
+        f"  • Price slippage tolerance: {SIGNAL_SLIPPAGE_PCT*100:.1f}%",
         "  Stale or slipped signals are REJECTED (no trade opens)",
         f"  {_SEP}",
         "  EXIT LOGIC",
@@ -1039,12 +1039,12 @@ def discord_startup(n_symbols: int, balance: float):
     }
     _post(payload)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘©  SCAN LOOP
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ⑩  SCAN LOOP
+# ═══════════════════════════════════════════════════════════════════
 def scan(symbols: list[str], trader: PaperTrader) -> int:
     found  = 0
-    prices = {}   # symbol â†’ last close price
+    prices = {}   # symbol → last close price
 
     for i, sym in enumerate(symbols, 1):
         try:
@@ -1056,7 +1056,7 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
             df = add_bb(df)
             prices[sym] = float(df.iloc[-1]["close"])
 
-            # â”€â”€ Signal check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # ── Signal check ──────────────────────────────────────────────────
             if not on_cooldown(sym):
                 for fn in CHECKERS:
                     sig = fn(df)
@@ -1068,7 +1068,7 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
 
                         chart = make_chart(df, sig, tgt, sym)
                         if chart is None:
-                            print(f"  [WARN] Chart skipped for {sym} â€” matplotlib not available. "
+                            print(f"  [WARN] Chart skipped for {sym} – matplotlib not available. "
                                   f"Install it with: pip install matplotlib")
                         else:
                             chart_size_kb = len(chart)/1024
@@ -1088,13 +1088,13 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
                         found += 1
 
                         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-                        print(f"  [{ts}] ðŸ”” {sig['direction']} {sym}  "
+                        print(f"  [{ts}] 🔔 {sig['direction']} {sym}  "
                               f"Entry={sig['entry']}  SL={sig['sl']}")
                         break   # one signal per symbol per scan
 
             if i % 50 == 0 or i == len(symbols):
                 ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-                print(f"  [{ts}] Scanned {i}/{len(symbols)}  Â·  signals: {found}")
+                print(f"  [{ts}] Scanned {i}/{len(symbols)}  ·  signals: {found}")
 
             time.sleep(REQUEST_DELAY)
 
@@ -1102,7 +1102,7 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
             print(f"  ! {sym}: {ex}")
             time.sleep(REQUEST_DELAY)
 
-    # â”€â”€ Auto-close trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Auto-close trades ──────────────────────────────────────────────────────
     # Build df_dict for band-touch exit logic (only for symbols with open trades)
     df_dict = {}
     for t in trader.open_trades:
@@ -1119,31 +1119,31 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
     closed = trader.update(prices, df_dict if df_dict else None)
     for t in closed:
         rpnl = t.get("rpnl", 0)
-        print(f"  ðŸ’° CLOSED {t['id']} {t['symbol']}  {t['close_reason']}"
+        print(f"  💰 CLOSED {t['id']} {t['symbol']}  {t['close_reason']}"
               f"  PnL=${rpnl:+.2f}")
         discord_close(t, trader.stats())
 
     return found
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  â‘ª  ENTRY POINT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ═══════════════════════════════════════════════════════════════════
+#  ⑪  ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════
 def main():
     print()
-    print("â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—")
-    print("â•‘   BB SCANNER  â€”  INSTITUTIONAL GRADE                         â•‘")
-    print("â•‘   Binance Perpetual  Â·  5m  Â·  BB(200,1)  Â·  30x Paper       â•‘")
-    print("â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•")
+    print("╔═══════════════════════════════════════════════════════════════╗")
+    print("║   BB SCANNER  –  INSTITUTIONAL GRADE                         ║")
+    print("║   Binance Perpetual  ·  5m  ·  BB(200,1)  ·  30x Paper       ║")
+    print("╚═══════════════════════════════════════════════════════════════╝")
     print(f"  Platform : {sys.platform}    Python : {sys.version.split()[0]}")
     print(f"  Charts   : {'ON (matplotlib)' if HAS_CHART else 'OFF (text-only Discord alerts)'}")
     print(f"  Trades   : {TRADES_FILE}")
 
     trader = PaperTrader()
     s      = trader.stats()
-    print(f"  Paper Portfolio  â†’  Balance: ${s['balance']:,.2f}  "
-          f"Â·  Open: {s['open']}  Â·  Closed: {s['closed']}")
+    print(f"  Paper Portfolio  →  Balance: ${s['balance']:,.2f}  "
+          f"·  Open: {s['open']}  ·  Closed: {s['closed']}")
 
-    # Robust symbol fetch â€” Termux / mobile networks can drop the first
+    # Robust symbol fetch – Termux / mobile networks can drop the first
     # call. Retry forever with backoff instead of crashing.
     symbols = []
     backoff = 5
@@ -1170,15 +1170,15 @@ def main():
     while True:
         scan_no += 1
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        print(f"\n{'â”€'*66}")
-        print(f"  SCAN #{scan_no:04d}  Â·  {ts} UTC")
-        print(f"{'â”€'*66}")
+        print(f"\n{'─'*66}")
+        print(f"  SCAN #{scan_no:04d}  ·  {ts} UTC")
+        print(f"{'─'*66}")
 
         try:
             n = scan(symbols, trader)
             s = trader.stats()
-            print(f"\n  âœ…  Scan #{scan_no:04d} complete  Â·  Signals: {n}")
-            print(f"  ðŸ’¼  Balance: ${s['balance']:,.2f}  "
+            print(f"\n  ✅  Scan #{scan_no:04d} complete  ·  Signals: {n}")
+            print(f"  💼  Balance: ${s['balance']:,.2f}  "
                   f"Return: {s['ret_pct']:+.2f}%  "
                   f"Open: {s['open']}  Closed: {s['closed']}")
 
@@ -1186,7 +1186,7 @@ def main():
             raise
         except Exception as ex:
             # Never let a transient error kill 24/7 operation.
-            print(f"\n  âŒ Scan error ({ex.__class__.__name__}): {ex}")
+            print(f"\n  ❌ Scan error ({ex.__class__.__name__}): {ex}")
 
         # Hourly summary
         if time.time() - last_summary >= SUMMARY_EVERY:
@@ -1197,7 +1197,7 @@ def main():
             last_summary = time.time()
 
         mins = SCAN_INTERVAL // 60
-        print(f"\n  Waiting {mins} min ({SCAN_INTERVAL}s)  Â·  Ctrl+C to stop")
+        print(f"\n  Waiting {mins} min ({SCAN_INTERVAL}s)  ·  Ctrl+C to stop")
         try:
             time.sleep(SCAN_INTERVAL)
         except KeyboardInterrupt:
@@ -1213,7 +1213,7 @@ def main():
 if __name__ == "__main__":
     # Outer guard: if anything truly catastrophic escapes main()
     # (e.g. permanent DNS failure), restart after a pause instead
-    # of dying â€” important for unattended Termux / boot use.
+    # of dying – important for unattended Termux / boot use.
     while True:
         try:
             main()
@@ -1221,6 +1221,6 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             break
         except Exception as ex:
-            print(f"\n  ðŸ’¥ Fatal error: {ex.__class__.__name__}: {ex}")
+            print(f"\n  💥 Fatal error: {ex.__class__.__name__}: {ex}")
             print("  Restarting in 30s...")
             time.sleep(30)
