@@ -4,7 +4,6 @@
 
 **Systematic Alpha Signal Discovery & Validation Engine for Cryptocurrency Markets**
 
----
 
 ### Overview
 
@@ -12,10 +11,17 @@ Azalyst Alpha X is a proprietary quantitative research framework designed to ide
 
 **Deployment Status:** Production environment hosted on Railway with automated scanning cycles and real-time signal generation.
 
-**Repository:** [github.com/gitdhirajsv/Azalyst-Alpha-Research-Engine](https://github.com/gitdhirajsv/Azalyst-Alpha-Research-Engine)
+**Tech Stack & Tools**
 
+![Python](https://img.shields.io/badge/Python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![Pandas](https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)
+![Matplotlib](https://img.shields.io/badge/Matplotlib-11557c?style=for-the-badge&logo=matplotlib&logoColor=white)
+![Requests](https://img.shields.io/badge/Requests-2d2d2d?style=for-the-badge)
+![Railway](https://img.shields.io/badge/Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)
+![Binance API](https://img.shields.io/badge/Binance%20API-F3BA2F?style=for-the-badge&logo=binance&logoColor=white)
+![Discord Webhook](https://img.shields.io/badge/Discord%20Webhook-5865F2?style=for-the-badge&logo=discord&logoColor=white)
 ---
-
 ### Strategic Architecture
 
 #### Core Philosophy
