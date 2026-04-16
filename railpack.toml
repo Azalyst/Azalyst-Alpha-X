@@ -1,2 +1,0 @@
-[deploy]
-startCmd = "python bb_scanner.py"
