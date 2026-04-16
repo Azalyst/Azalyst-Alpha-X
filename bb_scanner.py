@@ -1,4 +1,4 @@
-﻿"""
+"""
 â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
 â•‘   BB SCANNER  â€”  INSTITUTIONAL GRADE                             â•‘
 â•‘   Binance Perpetual Futures  |  5m  |  BB(200, SD 1)             â•‘
@@ -107,9 +107,10 @@ DISCORD_WEBHOOK  = (
 
 BB_PERIOD        = 200          # Bollinger Band period
 BB_SD            = 1            # Standard deviation multiplier
-TIMEFRAME        = "5m"
+TIMEFRAME        = "10m"
 CANDLE_LIMIT     = 320          # must be > BB_PERIOD + 50
-SCAN_INTERVAL    = 900          # seconds between full scans (600 = 10 min)
+SCAN_INTERVAL    = 900          # seconds between full scans (900 = 15 min)
+LOOKBACK_WINDOW  = 600          # look back 10 min (600s) to check if conditions matched
 REQUEST_DELAY    = 0.15         # seconds between API calls (rate-limit safe)
 SWING_LOOKBACK   = 60           # candles back to find swing high / low
 TOUCH_TOL        = 0.0025       # 0.25 % â€” band "touch" tolerance
@@ -311,57 +312,79 @@ def short_c1(df) -> dict | None:
 
 # â”€â”€ Band Touch Momentum Logic (NEW) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def long_band_touch(df) -> dict | None:
-    """Upper Band Touch Momentum â†’ Long
-    Price breaks above upper band, pulls back to touch band, bounces up â†’ BUY
-    Entry: When close > previous (momentum up after band touch)
-    SL: Low of the candle that touched the upper band"""
-    p, c = df.iloc[-2], df.iloc[-1]  # previous, current
+    """Upper Band Breakout Pullback → Long
+    Step 1: Price breaks ABOVE upper band (previous highs)
+    Step 2: Price comes back DOWN to touch upper band
+    Step 3: Price starts going UP again → BUY
+    SL: Low of the candle that touched upper band"""
     
-    band_touch_tol = p["upper"] * TOUCH_TOL
+    # Need at least 3 candles: breakout candle, pullback candle, entry candle
+    if len(df) < 3:
+        return None
     
-    # Prev candle touched upper band (close AT band OR high/low TOUCHES band)
-    touches_upper = (
-        abs(p["close"] - p["upper"]) <= band_touch_tol  # close at band
-        or p["high"] >= p["upper"]  # high touches/breaks band
+    breakout = df.iloc[-3]  # Candle that broke above upper band
+    pullback = df.iloc[-2]  # Candle that came back to touch upper band
+    entry = df.iloc[-1]     # Current candle showing upward momentum
+    
+    band_touch_tol = pullback["upper"] * TOUCH_TOL
+    
+    # Step 1: Breakout candle closed ABOVE upper band
+    broke_above = breakout["close"] > breakout["upper"]
+    
+    # Step 2: Pullback candle touched upper band (low touches or close at band)
+    # The pullback should come FROM above TO the band
+    touched_on_pullback = (
+        pullback["low"] <= pullback["upper"] + band_touch_tol  # low touches band
+        and pullback["high"] >= pullback["upper"]  # still reaches band
     )
     
-    # Current candle closes ABOVE previous (momentum going up)
-    momentum_up = c["close"] > p["close"]
+    # Step 3: Entry candle shows upward momentum (close > pullback close)
+    momentum_up = entry["close"] > pullback["close"]
     
-    # Price was above band recently (confirms prior break)
-    above_band_recently = any(df.iloc[i]["close"] > df.iloc[i]["upper"] 
-                              for i in range(-3, 0))
+    # Additional: pullback candle should be coming down (close < open or close < breakout close)
+    coming_down = pullback["close"] < breakout["close"]
     
-    if touches_upper and momentum_up and above_band_recently:
-        return _build("LONG", "Upper Band Touch Momentum",
-                      c["close"], p["low"])
+    if broke_above and touched_on_pullback and momentum_up and coming_down:
+        return _build("LONG", "Upper Band Breakout Pullback",
+                      entry["close"], pullback["low"])
     return None
 
 def short_band_touch(df) -> dict | None:
-    """Lower Band Touch Momentum â†’ Short
-    Price breaks below lower band, bounces back to touch band, drops down â†’ SELL
-    Entry: When close < previous (momentum down after band touch)
-    SL: High of the candle that touched the lower band"""
-    p, c = df.iloc[-2], df.iloc[-1]  # previous, current
+    """Lower Band Breakdown Pullback → Short
+    Step 1: Price breaks BELOW lower band (previous lows)
+    Step 2: Price comes back UP to touch lower band
+    Step 3: Price starts going DOWN again → SELL
+    SL: High of the candle that touched lower band"""
     
-    band_touch_tol = p["lower"] * TOUCH_TOL
+    # Need at least 3 candles: breakdown candle, pullback candle, entry candle
+    if len(df) < 3:
+        return None
     
-    # Prev candle touched lower band (close AT band OR high/low TOUCHES band)
-    touches_lower = (
-        abs(p["close"] - p["lower"]) <= band_touch_tol  # close at band
-        or p["low"] <= p["lower"]  # low touches/breaks band
+    breakdown = df.iloc[-3]  # Candle that broke below lower band
+    pullback = df.iloc[-2]   # Candle that came back to touch lower band
+    entry = df.iloc[-1]      # Current candle showing downward momentum
+    
+    band_touch_tol = abs(pullback["lower"]) * TOUCH_TOL
+    
+    # Step 1: Breakdown candle closed BELOW lower band
+    broke_below = breakdown["close"] < breakdown["lower"]
+    
+    # Step 2: Pullback candle touched lower band (high touches or close at band)
+    # The pullback should come FROM below TO the band
+    touched_on_pullback = (
+        pullback["high"] >= pullback["lower"] - band_touch_tol  # high touches band
+        and pullback["low"] <= pullback["lower"]  # still reaches band
     )
     
-    # Current candle closes BELOW previous (momentum going down)
-    momentum_down = c["close"] < p["close"]
+    # Step 3: Entry candle shows downward momentum (close < pullback close)
+    momentum_down = entry["close"] < pullback["close"]
     
-    # Price was below band recently (confirms prior break)
-    below_band_recently = any(df.iloc[i]["close"] < df.iloc[i]["lower"] 
-                              for i in range(-3, 0))
+    # Additional: pullback candle should be coming up (close > open or close > breakdown close)
+    coming_up = pullback["close"] > breakdown["close"]
     
-    if touches_lower and momentum_down and below_band_recently:
-        return _build("SHORT", "Lower Band Touch Momentum",
-                      c["close"], p["high"])
+    if broke_below and touched_on_pullback and momentum_down and coming_up:
+        return _build("SHORT", "Lower Band Breakdown Pullback",
+                      entry["close"], pullback["high"])
     return None
 
 CHECKERS = [long_band_touch, short_band_touch]
@@ -467,7 +490,13 @@ class PaperTrader:
         return trade
 
     # â”€â”€ mark-to-market & auto-close â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    def update(self, prices: dict) -> list[dict]:
+    def update(self, prices: dict, df_dict: dict = None) -> list[dict]:
+        """Update trades and check for band-touch exits.
+        
+        Args:
+            prices: Current prices by symbol
+            df_dict: Optional dict of DataFrames by symbol for band-touch exit logic
+        """
         still_open, closed = [], []
 
         for t in self.open_trades:
@@ -479,16 +508,46 @@ class PaperTrader:
             d  = t["direction"]
             cp = cr = None                          # close_price, close_reason
 
-            if d == "LONG":
-                if   px <= t["sl"]:                           cp, cr = t["sl"],  "SL âŒ Stop Loss"
-                elif t["tp2"] and px >= t["tp2"]:             cp, cr = t["tp2"], "TP2 âœ… Fib 1.618"
-                elif t["tp1"] and px >= t["tp1"]:             cp, cr = t["tp1"], "TP1 âœ… Fib 1.272"
-                else: t["upnl"] = round((px - t["entry"]) / t["entry"] * t["notional"], 4)
-            else:
-                if   px >= t["sl"]:                           cp, cr = t["sl"],  "SL âŒ Stop Loss"
-                elif t["tp2"] and px <= t["tp2"]:             cp, cr = t["tp2"], "TP2 âœ… Fib 1.618"
-                elif t["tp1"] and px <= t["tp1"]:             cp, cr = t["tp1"], "TP1 âœ… Fib 1.272"
-                else: t["upnl"] = round((t["entry"] - px) / t["entry"] * t["notional"], 4)
+            # Check for band-touch exit first (only if we have OHLC data)
+            # LONG exit: price went above upper band, now touching it on pullback
+            # SHORT exit: price went below lower band, now touching it on bounce
+            if df_dict and t["symbol"] in df_dict:
+                df = df_dict[t["symbol"]]
+                if len(df) >= 3:
+                    upper = df.iloc[-1]["upper"]
+                    lower = df.iloc[-1]["lower"]
+                    prev = df.iloc[-2]
+                    
+                    if d == "LONG":
+                        # Check if price was above upper band recently and now touching it
+                        was_above = any(df.iloc[i]["close"] > df.iloc[i]["upper"] 
+                                       for i in range(-4, -1))
+                        touching_now = (prev["low"] <= upper + upper*TOUCH_TOL 
+                                       and prev["high"] >= upper)
+                        if was_above and touching_now:
+                            cp, cr = px, "Upper Band Touch Exit ✅"
+                    
+                    elif d == "SHORT":
+                        # Check if price was below lower band recently and now touching it
+                        was_below = any(df.iloc[i]["close"] < df.iloc[i]["lower"] 
+                                       for i in range(-4, -1))
+                        touching_now = (prev["high"] >= lower - abs(lower)*TOUCH_TOL 
+                                       and prev["low"] <= lower)
+                        if was_below and touching_now:
+                            cp, cr = px, "Lower Band Touch Exit ✅"
+
+            # Standard exit checks (only if not already exited via band touch)
+            if cp is None:
+                if d == "LONG":
+                    if   px <= t["sl"]:                           cp, cr = t["sl"],  "SL ❌ Stop Loss"
+                    elif t["tp2"] and px >= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
+                    elif t["tp1"] and px >= t["tp1"]:             cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
+                    else: t["upnl"] = round((px - t["entry"]) / t["entry"] * t["notional"], 4)
+                else:
+                    if   px >= t["sl"]:                           cp, cr = t["sl"],  "SL ❌ Stop Loss"
+                    elif t["tp2"] and px <= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
+                    elif t["tp1"] and px <= t["tp1"]:             cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
+                    else: t["upnl"] = round((t["entry"] - px) / t["entry"] * t["notional"], 4)
 
             if cp is not None:
                 mult = 1 if d == "LONG" else -1
@@ -1044,7 +1103,20 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
             time.sleep(REQUEST_DELAY)
 
     # â”€â”€ Auto-close trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    closed = trader.update(prices)
+    # Build df_dict for band-touch exit logic (only for symbols with open trades)
+    df_dict = {}
+    for t in trader.open_trades:
+        sym = t["symbol"]
+        if sym in prices:  # Only fetch if we have price data
+            try:
+                df = fetch_df(sym)
+                if df is not None and len(df) >= BB_PERIOD + 15:
+                    df = add_bb(df)
+                    df_dict[sym] = df
+            except Exception:
+                pass  # Skip if fetch fails, will use standard exit logic
+    
+    closed = trader.update(prices, df_dict if df_dict else None)
     for t in closed:
         rpnl = t.get("rpnl", 0)
         print(f"  ðŸ’° CLOSED {t['id']} {t['symbol']}  {t['close_reason']}"
