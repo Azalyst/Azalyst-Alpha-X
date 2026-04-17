@@ -21,7 +21,7 @@ RSI_LOW = int(os.getenv('RSI_LOW', '45'))
 RSI_HIGH = int(os.getenv('RSI_HIGH', '65'))
 TOP_N_SYMBOLS = int(os.getenv('TOP_N_SYMBOLS', '100'))
 
-# Get port from Render environment, default to 8080 if not set
+# Get PORT from Render environment (Critical Fix)
 PORT = int(os.getenv('PORT', 8080))
 
 # --- LOGGING ---
@@ -75,8 +75,8 @@ def index():
     return render_template_string(HTML_TEMPLATE, signals=reversed(signal_history))
 
 def run_web_server():
-    # Removed log_level argument and used PORT env var
-    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
+    # Fixed: Removed log_level, used PORT variable
+    app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # --- SCANNER LOGIC ---
 
@@ -171,9 +171,7 @@ def check_signal(symbol, closes, highs, lows):
     return None
 
 def format_signal_message(sig):
-    """Formats the message exactly like your Discord logs but NO EMOJIS"""
     entry = sig['price']
-    # Simple SL/TP calculation for display
     sl_dist = entry * 0.002
     stop_loss = entry - sl_dist if sig['type'] == "LONG" else entry + sl_dist
     tp1 = entry + (sl_dist * 5) if sig['type'] == "LONG" else entry - (sl_dist * 5)
@@ -261,13 +259,8 @@ def scanner_loop():
             
             if sig:
                 msg = format_signal_message(sig)
-                
-                # 1. Send to Discord
                 send_discord_message(msg)
-                
-                # 2. Store for Web Portal
                 store_signal_web(sig, msg)
-                
                 logger.info(f"Signal Found: {sig['symbol']} ({sig['type']})")
 
         elapsed = time.time() - start_time
