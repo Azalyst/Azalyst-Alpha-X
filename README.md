@@ -1,18 +1,6 @@
 # Azalyst Alpha X
 
-## Institutional-Style Quantitative Research Platform
-
-**Systematic Alpha Signal Discovery & Validation Engine for Cryptocurrency Markets**
-
----
-
-### Overview
-
 Azalyst Alpha X is a proprietary quantitative research framework designed to identify, validate, and execute systematic trading signals in digital asset markets. The platform employs rigorous statistical methodologies, multi-timeframe momentum analysis, trend stage classification, and disciplined risk management protocols characteristic of institutional trading desks.
-
-**Deployment Status:** Production environment hosted on Railway with automated scanning cycles and real-time signal generation.
-
-**Repository:** [github.com/gitdhirajsv/Azalyst-Alpha-Research-Engine](https://github.com/gitdhirajsv/Azalyst-Alpha-Research-Engine)
 
 ---
 
