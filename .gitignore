@@ -1,6 +1,55 @@
-.env
-.env.local
+```
+# Python
 __pycache__/
 *.pyc
-charts/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.ENV.local
+.env
+.env.local
+.env.*
+.env.local.*
+.venv.bak/
+venv.bak/
+
+# Build/dist
+build/
+dist/
+*.egg
+*.egg-info/
+*.so
+.libs/
+.deps/
+
+# Testing
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
+.hypothesis/
+
+# Logs
 *.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Environment specific
+.env
+.env.local
+*.env
+*.env.local
+```
