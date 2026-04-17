@@ -83,7 +83,7 @@ Stop Loss  → Low (Long) or High (Short) of pullback/bounce touch candle
 """
 
 # ─── STDLIB ──────────────────────────────────────────────────────────────────
-import io, json, os, sys, time
+import io, json, os, sys, time, threading
 from datetime import datetime, timezone
 
 # Force UTF-8 stdout so emojis / box chars render cleanly on
@@ -98,6 +98,16 @@ except Exception:
 import numpy  as np
 import pandas as pd
 import requests
+
+# ─── FLASK for Render Web Environment ────────────────────────────────────────
+try:
+    from flask import Flask, jsonify
+    app = Flask(__name__)
+    HAS_FLASK = True
+except ImportError:
+    HAS_FLASK = False
+    app = None
+    print("  [INFO] Flask not installed. Running in standalone mode only.")
 
 # ─── matplotlib is OPTIONAL (skip on Termux if it won't install) ─
 try:
@@ -1751,16 +1761,61 @@ def main():
 
 
 if __name__ == "__main__":
-    # Outer guard: if anything truly catastrophic escapes main()
-    # (e.g. permanent DNS failure), restart after a pause instead
-    # of dying – important for unattended Termux / boot use.
-    while True:
-        try:
-            main()
-            break   # clean exit (Ctrl+C inside main)
-        except KeyboardInterrupt:
-            break
-        except Exception as ex:
-            print(f"\n  💥 Fatal error: {ex.__class__.__name__}: {ex}")
-            print("  Restarting in 30s...")
-            time.sleep(30)
+    # ═══════════════════════════════════════════════════════════════════
+    #  RENDER WEB ENVIRONMENT SUPPORT
+    # ═══════════════════════════════════════════════════════════════════
+    # When deployed on Render as a Web Service, Flask routes are required.
+    # The scanner runs in a background thread while Flask serves HTTP.
+    
+    if HAS_FLASK:
+        # Define Flask routes for health checks and status
+        @app.route("/")
+        def health():
+            return jsonify({
+                "status": "running",
+                "service": "BB Scanner",
+                "uptime": time.time() - start_time if 'start_time' in globals() else 0
+            })
+        
+        @app.route("/health")
+        def health_check():
+            return jsonify({"status": "healthy"})
+        
+        @app.route("/status")
+        def status():
+            return jsonify({
+                "scanner": "active",
+                "flask": "running",
+                "port": os.environ.get("PORT", 8000)
+            })
+        
+        # Start the scanner in a background daemon thread
+        scanner_thread = threading.Thread(target=lambda: {
+            setattr(sys.modules[__name__], '_scanner_running', True),
+            (lambda: [
+                main() for _ in iter(lambda: getattr(sys.modules[__name__], '_scanner_running', True), False)
+            ])()
+        }, daemon=True)
+        scanner_thread.start()
+        print("  🚀 Scanner started in background thread")
+        print(f"  🌐 Flask server starting on port {os.environ.get('PORT', 8000)}")
+        
+        # Run Flask web server (blocks here, serving HTTP requests)
+        import logging
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+        
+        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), threaded=True)
+    
+    else:
+        # Standalone mode (local PC, Termux, etc.) – run scanner in main thread
+        while True:
+            try:
+                main()
+                break   # clean exit (Ctrl+C inside main)
+            except KeyboardInterrupt:
+                break
+            except Exception as ex:
+                print(f"\n  💥 Fatal error: {ex.__class__.__name__}: {ex}")
+                print("  Restarting in 30s...")
+                time.sleep(30)
