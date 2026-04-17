@@ -190,22 +190,44 @@ if HTTPS_PROXY:
 
 def _pick_endpoint() -> str:
     """
-    Try each FAPI endpoint and return the first one that responds with
-    HTTP 200 on /fapi/v1/ping.  Falls back to the first entry on total failure.
+    Try each FAPI endpoint and return the first one that:
+      1. Responds with HTTP 200 on /fapi/v1/exchangeInfo, AND
+      2. Returns valid JSON that contains the expected "symbols" key.
+
+    Using /exchangeInfo (instead of /ping) catches endpoints that are
+    reachable but return empty or malformed bodies — the root cause of
+    JSONDecodeError when fapi1/fapi2 mirrors are degraded.
+
+    Falls back to the first entry only if every endpoint fails, so the
+    normal error path can surface a clear message.
     Updates the global FAPI_BASE so all subsequent calls use the working host.
     """
     global FAPI_BASE
     for base in FAPI_ENDPOINTS:
         try:
-            r = _SESSION.get(f"{base}/fapi/v1/ping", timeout=8)
-            if r.status_code == 200:
-                FAPI_BASE = base
-                if base != FAPI_ENDPOINTS[0]:
-                    print(f"  [INFO] Using fallback endpoint: {base}")
-                return base
-        except Exception:
-            pass
-    # None reachable — keep default and let the normal error path handle it
+            r = _SESSION.get(f"{base}/fapi/v1/exchangeInfo", timeout=10)
+            if r.status_code != 200:
+                print(f"  [WARN] Endpoint {base} returned HTTP {r.status_code} — skipping")
+                continue
+            try:
+                body = r.json()
+            except Exception as json_err:
+                print(f"  [WARN] Endpoint {base} returned invalid JSON ({json_err}) — skipping")
+                continue
+            if "symbols" not in body:
+                print(f"  [WARN] Endpoint {base} response missing 'symbols' key — skipping")
+                continue
+            # Endpoint passed all checks
+            FAPI_BASE = base
+            if base != FAPI_ENDPOINTS[0]:
+                print(f"  [INFO] Primary endpoint unavailable. Using fallback: {base}")
+            else:
+                print(f"  [INFO] Endpoint {base} validated (exchangeInfo OK)")
+            return base
+        except Exception as e:
+            print(f"  [WARN] Endpoint {base} unreachable ({e.__class__.__name__}: {e}) — skipping")
+    # No endpoint passed — keep default and let the normal error path surface it
+    print(f"  [ERROR] All FAPI endpoints failed validation. Falling back to {FAPI_ENDPOINTS[0]}")
     FAPI_BASE = FAPI_ENDPOINTS[0]
     return FAPI_BASE
 
@@ -263,21 +285,50 @@ def cache_signal(sym: str, sig: dict, current_price: float):
 def get_symbols() -> list[str]:
     """
     Fetch all active USDT-margined perpetual symbols directly from
-    fapi.binance.com/fapi/v1/exchangeInfo – no dapi.binance.com call,
-    no ccxt load_markets() timeout.
+    /fapi/v1/exchangeInfo – no dapi.binance.com call, no ccxt load_markets() timeout.
+
+    Iterates FAPI_ENDPOINTS in order so that if FAPI_BASE was set to a
+    working endpoint by _pick_endpoint(), it is tried first.  Each endpoint
+    is validated independently: HTTP status, JSON decodability, and presence
+    of the "symbols" key.  This prevents a JSONDecodeError from an empty/
+    malformed response (e.g. fapi1/fapi2 returning garbage) from crashing
+    the bot.  Raises RuntimeError if every endpoint fails.
     """
-    url  = f"{FAPI_BASE}/fapi/v1/exchangeInfo"
-    resp = _SESSION.get(url, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    syms = []
-    for s in data["symbols"]:
-        if (s.get("quoteAsset") == "USDT"
-                and s.get("status")       == "TRADING"
-                and s.get("contractType") == "PERPETUAL"):
-            # store in ccxt-style  BTC/USDT  so rest of code is unchanged
-            syms.append(s["baseAsset"] + "/USDT")
-    return sorted(set(syms))
+    # Build probe order: preferred endpoint first, then the rest
+    ordered = [FAPI_BASE] + [ep for ep in FAPI_ENDPOINTS if ep != FAPI_BASE]
+
+    for base in ordered:
+        try:
+            url  = f"{base}/fapi/v1/exchangeInfo"
+            resp = _SESSION.get(url, timeout=15)
+            if resp.status_code != 200:
+                print(f"  [WARN] get_symbols: {base} returned HTTP {resp.status_code} — trying next")
+                continue
+            try:
+                data = resp.json()
+            except Exception as json_err:
+                print(f"  [WARN] get_symbols: {base} returned invalid JSON ({json_err}) — trying next")
+                continue
+            if "symbols" not in data:
+                print(f"  [WARN] get_symbols: {base} response missing 'symbols' key — trying next")
+                continue
+            # Success — parse and return
+            print(f"  [INFO] get_symbols: fetched exchange info from {base}")
+            syms = []
+            for s in data["symbols"]:
+                if (s.get("quoteAsset") == "USDT"
+                        and s.get("status")       == "TRADING"
+                        and s.get("contractType") == "PERPETUAL"):
+                    # store in ccxt-style  BTC/USDT  so rest of code is unchanged
+                    syms.append(s["baseAsset"] + "/USDT")
+            return sorted(set(syms))
+        except Exception as e:
+            print(f"  [WARN] get_symbols: {base} unreachable ({e.__class__.__name__}: {e}) — trying next")
+
+    raise RuntimeError(
+        "get_symbols: all FAPI endpoints failed to return valid exchangeInfo. "
+        "Check network connectivity or configure HTTPS_PROXY to bypass geo-blocks."
+    )
 
 
 def _raw_symbol(ccxt_sym: str) -> str:
