@@ -177,7 +177,7 @@ def send_telegram_message(message):
     """Send alert to Telegram"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         logger.warning("Telegram credentials missing. Logging only.")
-        logger.info(f"🚨 ALERT: {message}")
+        logger.info(f"SIGNAL ALERT: {message}")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -198,29 +198,48 @@ def send_telegram_message(message):
 # --- MAIN LOOP ---
 
 def main():
-    logger.info("🚀 Starting BB Scanner on Railway...")
+    logger.info("Starting BB Scanner on Railway...")
     logger.info(f"Config: Interval={SCAN_INTERVAL_SECONDS}s, TF={TIMEFRAME}, MinBW={MIN_BANDWIDTH_PCT}")
 
+    # Check for API Keys immediately
     if not API_KEY or not API_SECRET:
-        logger.error("❌ CRITICAL: Missing BINANCE_API_KEY or BINANCE_API_SECRET in Env Vars!")
-        # Don't exit immediately in case user wants to see logs, but loop will fail safely
-        time.sleep(10)
+        logger.error("CRITICAL: Missing BINANCE_API_KEY or BINANCE_API_SECRET in Env Vars!")
+        logger.info("Waiting 60s before retrying (in case env vars update)...")
+        time.sleep(60)
+        # We continue to the loop, but client creation will fail safely there
 
-    client = Client(API_KEY, API_SECRET)
-
-    # Test connection
+    client = None
     try:
-        client.get_account()
-        logger.info("✅ Connected to Binance API")
+        client = Client(API_KEY, API_SECRET)
+        # Try a lightweight public call first to test connectivity without auth if needed
+        # But for get_account we need auth. If region restricted, this throws.
+        client.get_account() 
+        logger.info("Connected to Binance API")
     except Exception as e:
-        logger.error(f"❌ Binance Connection Failed: {e}")
-        # Continue anyway to see if it's a permission issue vs key issue
+        logger.error(f"Binance Connection Issue: {e}")
+        logger.info("Running in limited mode. Signals may fail if API blocks requests.")
+        # We do NOT exit here, allowing the loop to try fetching public data (klines)
+        # which sometimes works even if account access is blocked.
+        try:
+            client = Client(API_KEY, API_SECRET, verify=False) # Fallback attempt
+        except:
+            pass
 
     while True:
         start_time = time.time()
-        logger.info(f"\n🔍 Starting Scan Cycle at {datetime.now().strftime('%H:%M:%S')}")
+        logger.info(f"\nStarting Scan Cycle at {datetime.now().strftime('%H:%M:%S')}")
 
-        symbols = get_top_symbols(client)
+        if not client:
+            logger.warning("No valid client. Skipping cycle.")
+            time.sleep(SCAN_INTERVAL_SECONDS)
+            continue
+
+        try:
+            symbols = get_top_symbols(client)
+        except Exception as e:
+            logger.error(f"Failed to get symbols: {e}")
+            symbols = []
+
         if not symbols:
             logger.warning("No symbols found. Retrying in full interval...")
             time.sleep(SCAN_INTERVAL_SECONDS)
@@ -238,7 +257,11 @@ def main():
         }
 
         for symbol in symbols:
-            closes, highs, lows = fetch_klines(client, symbol)
+            try:
+                closes, highs, lows = fetch_klines(client, symbol)
+            except Exception as e:
+                logger.warning(f"Error fetching data for {symbol}: {e}")
+                continue
 
             if closes is None:
                 continue
@@ -247,11 +270,11 @@ def main():
 
             if signal:
                 msg = (
-                    f"🚨 **{signal} SIGNAL** 🚨\n\n"
-                    f"Coin: `{symbol}`\n"
-                    f"Timeframe: `{TIMEFRAME}`\n"
+                    f"SIGNAL ALERT [{signal}]\n\n"
+                    f"Coin: {symbol}\n"
+                    f"Timeframe: {TIMEFRAME}\n"
                     f"Details: {details}\n"
-                    f"Price: `{closes[-1]}`"
+                    f"Price: {closes[-1]}"
                 )
                 send_telegram_message(msg)
                 signals_found += 1
@@ -263,8 +286,8 @@ def main():
                     rejection_counts["OTHER"] += 1
 
         elapsed = time.time() - start_time
-        logger.info(f"✅ Cycle Complete. Found {signals_found} signals.")
-        logger.info(f"📊 Rejections: BW={rejection_counts['BANDWIDTH_FAIL']} | "
+        logger.info(f"Cycle Complete. Found {signals_found} signals.")
+        logger.info(f"Rejections: BW={rejection_counts['BANDWIDTH_FAIL']} | "
                     f"Zone={rejection_counts['DEAD_ZONE']} | "
                     f"Pat={rejection_counts['NO_PATTERN']}")
 
