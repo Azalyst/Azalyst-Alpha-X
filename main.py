@@ -122,7 +122,7 @@ DISCORD_WEBHOOK  = (
 BB_PERIOD        = 200          # Bollinger Band period
 BB_SD            = 1            # Standard deviation multiplier
 TIMEFRAME        = "1m"
-CANDLE_LIMIT     = 450          # must be > BB_PERIOD + BREAKOUT_LOOKBACK + 20 (was 420)
+CANDLE_LIMIT     = 320          # must be > BB_PERIOD + 50
 SCAN_INTERVAL    = 300          # seconds between full scans (300 = 5 min)
 LOOKBACK_WINDOW  = 300          # look back 5 min (300s) to check if conditions matched
 REQUEST_DELAY    = 0.15         # seconds between API calls (rate-limit safe)
@@ -144,13 +144,13 @@ TOUCH_TOL        = 0.0025       # 0.25 % – band "touch" tolerance
 #                       many candles of the breakout (hard deadline: if price
 #                       hasn't re-touched the band in 10 min the move is over)
 BREAKOUT_LOOKBACK = 30          # scan 30 candles back for the spike
-ENTRY_WINDOW      = 12          # band touch + confirmation ≤ 12 candles after spike (relaxed from 10)
+ENTRY_WINDOW      = 10          # band touch + confirmation ≤ 10 candles after spike
 
 # Anti-sideways filters
-MIN_BREAKOUT_PCT = 0.001        # breakout candle must close at least 0.1% beyond the band (relaxed from 0.2%)
-                                # catches smaller breakouts that still have momentum
-MIN_BANDWIDTH_PCT = 0.006       # ignore setups when BB width < 0.6% of price (relaxed from 0.8%)
-                                # allows tighter bands typical of mid-cap coins in consolidation
+MIN_BREAKOUT_PCT = 0.002        # breakout candle must close at least 0.2% beyond the band
+                                # tiny pokes above/below don't count as real breakouts
+MIN_BANDWIDTH_PCT = 0.008       # ignore setups when BB width < 0.8% of price
+                                # narrow bands = sideways / squeeze → no trade
 
 # ── Multi-Timeframe RSI Filter ────────────────────────────────────────────────
 # Inspired by CoinGlass RSI Heatmap: only trade symbols where higher-timeframe
@@ -164,10 +164,10 @@ MIN_BANDWIDTH_PCT = 0.006       # ignore setups when BB width < 0.6% of price (r
 # These thresholds deliberately sit in the "clearly trending" zone, not the
 # borderline 50 area, so we only enter when momentum is unambiguous.
 RSI_PERIOD       = 14           # standard Wilder 14-period RSI
-RSI_LONG_1H      = 55           # 1h RSI must be ≥ this for LONG  (relaxed from 60 for emerging trends)
-RSI_LONG_4H      = 50           # 4h RSI must be ≥ this for LONG  (relaxed from 55 for early entries)
-RSI_SHORT_1H     = 35           # 1h RSI must be ≤ this for SHORT (relaxed from 40 for emerging trends)
-RSI_SHORT_4H     = 40           # 4h RSI must be ≤ this for SHORT (relaxed from 45 for early entries)
+RSI_LONG_1H      = 60           # 1h RSI must be ≥ this for LONG  (bullish momentum)
+RSI_LONG_4H      = 55           # 4h RSI must be ≥ this for LONG  (confirmed uptrend)
+RSI_SHORT_1H     = 40           # 1h RSI must be ≤ this for SHORT (bearish momentum)
+RSI_SHORT_4H     = 45           # 4h RSI must be ≤ this for SHORT (confirmed downtrend)
 
 # ── Trend Stage Detection ─────────────────────────────────────────────────────
 # Classifies each signal as EARLY / MID / LATE so you can prioritise entries.
@@ -184,12 +184,12 @@ RSI_SHORT_4H     = 40           # 4h RSI must be ≤ this for SHORT (relaxed fro
 # qualify as "accelerating". A flat RSI at 60 is very different from one
 # that jumped from 50→60 in 3 candles — the latter is a trend starter.
 TREND_STAGE_MID_4H   = 68       # 4h RSI above this → MID stage
-TREND_STAGE_LATE_4H  = 80       # 4h RSI above this → LATE
-SKIP_LATE_STAGE      = False    # ALLOW LATE-stage signals (let trends run, higher risk/reward)
-VOLUME_SURGE_MULT    = 1.3      # signal candle volume ≥ 1.3× 20-candle avg (relaxed from 1.5)
+TREND_STAGE_LATE_4H  = 80       # 4h RSI above this → LATE (skip by default)
+SKIP_LATE_STAGE      = True     # set False to trade LATE-stage signals anyway
+VOLUME_SURGE_MULT    = 1.5      # signal candle volume ≥ 1.5× 20-candle avg
 VOLUME_LOOKBACK      = 20       # candles for volume average
-RSI_VELOCITY_MIN     = 2.5      # 4h RSI must have risen ≥ 2.5 pts in last 3 candles (relaxed from 4.0)
-                                # (LONG) or fallen ≥ 2.5 pts (SHORT)
+RSI_VELOCITY_MIN     = 4.0      # 4h RSI must have risen ≥ 4 pts in last 3 candles
+                                # (LONG) or fallen ≥ 4 pts (SHORT)
 
 # Paper trading
 INITIAL_BALANCE  = 10_000.0     # starting virtual USDT
@@ -204,66 +204,11 @@ MAX_OPEN_TRADES  = 5            # never hold more than this many positions at on
                                 # Prevents a bad scan from opening 10 positions that
                                 # all hit SL in the same update cycle.
 
-# ── Symbol-level verbose skip logging ────────────────────────────────────────
-# VERBOSE_LOG_ALL=False: Only symbols in WATCH_SYMBOLS get detailed rejection reasons
-# VERBOSE_LOG_ALL=True: ALL symbols get detailed rejection reasons (helps find blocked coins)
-VERBOSE_LOG_ALL    = True       # enable verbose debug for ALL symbols
-
-WATCH_SYMBOLS: set[str] = {
-    # "BTC/USDT",
-    # "ETH/USDT",
-}
-
-# ═══════════════════════════════════════════════════════════════════
-#  ①A  FILTER PRESETS  ←  Choose one preset and set ACTIVE_PRESET
-# ═══════════════════════════════════════════════════════════════════
-# PRESET_CONSERVATIVE: Slightly relaxed filters (20-30% more signals, still high quality)
-# PRESET_BALANCED: Moderate relaxation (50% more signals, good quality)
-# PRESET_AGGRESSIVE: Max coverage (100%+ more signals, catch everything)
-
-PRESET_CONSERVATIVE = {
-    "ENTRY_WINDOW": 12,
-    "MIN_BREAKOUT_PCT": 0.001,
-    "MIN_BANDWIDTH_PCT": 0.006,
-    "RSI_LONG_1H": 55,
-    "RSI_LONG_4H": 50,
-    "RSI_SHORT_1H": 35,
-    "RSI_SHORT_4H": 40,
-    "VOLUME_SURGE_MULT": 1.3,
-    "RSI_VELOCITY_MIN": 2.5,
-}
-
-PRESET_BALANCED = {
-    "ENTRY_WINDOW": 16,
-    "MIN_BREAKOUT_PCT": 0.001,
-    "MIN_BANDWIDTH_PCT": 0.005,
-    "RSI_LONG_1H": 50,
-    "RSI_LONG_4H": 45,
-    "RSI_SHORT_1H": 35,
-    "RSI_SHORT_4H": 35,
-    "VOLUME_SURGE_MULT": 1.2,
-    "RSI_VELOCITY_MIN": 2.0,
-}
-
-PRESET_AGGRESSIVE = {
-    "ENTRY_WINDOW": 20,
-    "MIN_BREAKOUT_PCT": 0.0005,
-    "MIN_BANDWIDTH_PCT": 0.003,
-    "RSI_LONG_1H": 45,
-    "RSI_LONG_4H": 40,
-    "RSI_SHORT_1H": 30,
-    "RSI_SHORT_4H": 30,
-    "VOLUME_SURGE_MULT": 1.0,
-    "RSI_VELOCITY_MIN": 1.0,
-}
-
-ACTIVE_PRESET = "PRESET_CONSERVATIVE"  # ← CHOOSE: PRESET_CONSERVATIVE, PRESET_BALANCED, PRESET_AGGRESSIVE
-
 # Anchor data files to the directory containing this script so they
 # follow the .py file whether you launch it from Windows, Linux or
 # Termux, regardless of the current working directory.
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_TRADES_FILE = os.path.join(_SCRIPT_DIR, "paper_trades.json")
+TRADES_FILE = os.path.join(_SCRIPT_DIR, "paper_trades.json")
 
 # Create a dedicated charts folder for all generated chart images
 CHARTS_DIR = os.path.join(_SCRIPT_DIR, "charts")
@@ -273,15 +218,6 @@ if not os.path.exists(CHARTS_DIR):
     except Exception as e:
         print(f"  [WARN] Could not create charts folder: {e}. Charts will save to script dir.")
         CHARTS_DIR = _SCRIPT_DIR
-
-# Create historical data directory for backtesting analysis
-HISTORY_DIR = os.path.join(_SCRIPT_DIR, "history")
-if not os.path.exists(HISTORY_DIR):
-    try:
-        os.makedirs(HISTORY_DIR, exist_ok=True)
-    except Exception as e:
-        print(f"  [WARN] Could not create history folder: {e}. History will save to script dir.")
-        HISTORY_DIR = _SCRIPT_DIR
 
 # ═══════════════════════════════════════════════════════════════════
 #  ②  EXCHANGE  –  direct REST (bypasses ccxt load_markets which
@@ -566,9 +502,9 @@ def score_trend(symbol: str, direction: str, df_1m: pd.DataFrame) -> dict:
     score = rsi_pts + stage_pts + vel_pts + vol_pts
 
     # ── Decision ─────────────────────────────────────────────────────────────
-    # ALLOW LATE-stage if SKIP_LATE_STAGE=False
     passed = (
         rsi_check_pass
+        and (not SKIP_LATE_STAGE or stage != "LATE")
         and vol_ratio >= VOLUME_SURGE_MULT
     )
 
@@ -586,20 +522,6 @@ def score_trend(symbol: str, direction: str, df_1m: pd.DataFrame) -> dict:
     verdict = "✅ TRADE" if passed else "❌ SKIP"
     print(f"    [TREND] {symbol} {direction} | {reason}  → {verdict}")
 
-    # ── ADD DEBUG INFO ────────────────────────────────────────────────────────
-    failed_filters = []
-    if not rsi_check_pass:
-        if direction == "LONG":
-            if r1h < RSI_LONG_1H: failed_filters.append(f"RSI_1H({r1h:.0f}<{RSI_LONG_1H})")
-            if r4h < RSI_LONG_4H: failed_filters.append(f"RSI_4H({r4h:.0f}<{RSI_LONG_4H})")
-        else:
-            if r1h > RSI_SHORT_1H: failed_filters.append(f"RSI_1H({r1h:.0f}>{RSI_SHORT_1H})")
-            if r4h > RSI_SHORT_4H: failed_filters.append(f"RSI_4H({r4h:.0f}>{RSI_SHORT_4H})")
-    if vol_ratio < VOLUME_SURGE_MULT:
-        failed_filters.append(f"VOL({vol_ratio:.1f}x<{VOLUME_SURGE_MULT})")
-    
-    debug_info = {"failed_filters": failed_filters} if failed_filters else {}
-
     return {
         "passed":    passed,
         "stage":     stage,
@@ -609,7 +531,6 @@ def score_trend(symbol: str, direction: str, df_1m: pd.DataFrame) -> dict:
         "velocity":  round(velocity, 2),
         "vol_ratio": round(vol_ratio, 2),
         "reason":    reason,
-        **debug_info,
     }
 
 
@@ -661,7 +582,7 @@ def _build(direction, condition, entry, sl):
 #  Exit detection lives in PaperTrader.update() using a per-trade `extended`
 #  flag that survives across many scan cycles correctly.
 # ──────────────────────────────────────────────────────────────────────────────
-def long_band_touch(df, verbose: bool = False) -> dict | None:
+def long_band_touch(df) -> dict | None:
     """Upper Band Breakout → Pullback → BUY  (new LONG entry only)
     ─────────────────────────────────────────────────────────────────
     Sliding-window search — no longer a rigid [-3,-2,-1] 3-candle check.
@@ -685,13 +606,8 @@ def long_band_touch(df, verbose: bool = False) -> dict | None:
 
     SL : low of the pullback/touch candle (unchanged from original logic).
     """
-    def vlog(msg):
-        if verbose or VERBOSE_LOG_ALL:
-            print(f"      [LONG?] {msg}")
-
     n = len(df)
     if n < BB_PERIOD + BREAKOUT_LOOKBACK + 2:
-        vlog(f"❌ Not enough candles ({n} < {BB_PERIOD + BREAKOUT_LOOKBACK + 2})")
         return None
 
     current = df.iloc[-1]
@@ -699,17 +615,11 @@ def long_band_touch(df, verbose: bool = False) -> dict | None:
     # ── Anti-sideways filter ① : bandwidth too narrow → skip ──────────
     bandwidth_pct = (current["upper"] - current["lower"]) / current["mid"]
     if bandwidth_pct < MIN_BANDWIDTH_PCT:
-        vlog(f"❌ BB bandwidth too narrow: {bandwidth_pct*100:.3f}% < {MIN_BANDWIDTH_PCT*100}% "
-             f"(sideways/squeeze — no trade)")
         return None
 
     # ── Anti-sideways filter ③ : current price must be above middle band ─
     if current["close"] < current["mid"]:
-        vlog(f"❌ Price below mid-band: close={current['close']:.6g}  mid={current['mid']:.6g}  "
-             f"(need price > mid for LONG)")
         return None
-
-    vlog(f"✅ Bandwidth {bandwidth_pct*100:.3f}% OK  |  price above mid ✅")
 
     # ── Step 1+2 : find the most recent valid breakout within window ───────
     breakout     = None
@@ -724,8 +634,6 @@ def long_band_touch(df, verbose: bool = False) -> dict | None:
         # Breakout must be meaningful (≥ MIN_BREAKOUT_PCT beyond band)
         bd = (candidate["close"] - candidate["upper"]) / candidate["upper"]
         if bd < MIN_BREAKOUT_PCT:
-            vlog(f"  candle-{offset}: close above upper but breakout too small "
-                 f"({bd*100:.3f}% < {MIN_BREAKOUT_PCT*100}%) — not a real breakout")
             continue
 
         # Found the most recent valid breakout
@@ -734,62 +642,45 @@ def long_band_touch(df, verbose: bool = False) -> dict | None:
         break   # stop at the most recent one
 
     if breakout is None:
-        vlog(f"❌ BREAKOUT GATE: No valid LONG breakout found in last {BREAKOUT_LOOKBACK} candles "
-             f"(need a candle that closed ≥{MIN_BREAKOUT_PCT*100}% above upper band)")
         return None
-
-    vlog(f"✅ BREAKOUT VALID: {breakout_pos} candles ago  "
-         f"close={breakout['close']:.6g}  upper={breakout['upper']:.6g}")
 
     # ── Step 2 : entry-window gate — spike must be ≤ ENTRY_WINDOW candles ago ─
     if breakout_pos > ENTRY_WINDOW:
-        vlog(f"❌ ENTRY WINDOW GATE: Breakout STALE - {breakout_pos} candles ago > {ENTRY_WINDOW} "
-             f"(spike too old, move over)")
+        # Spike was detected but is stale (> 10 min old).
+        # Log it so you can see why it was skipped, then bail.
         return None
 
     # ── Step 3 : find a valid pullback touch between breakout and current ──────
     # Search from the candle just before current back toward (but not including)
     # the breakout itself.  We want the MOST RECENT valid pullback.
-    vlog(f"  Searching for pullback touch in candles [-1...-{breakout_pos-1}]…")
     for pb_offset in range(1, breakout_pos):
         pullback = df.iloc[-1 - pb_offset]
         tol = pullback["upper"] * TOUCH_TOL
 
-        low_ok   = pullback["low"]   <= pullback["upper"] + tol
-        high_ok  = pullback["high"]  >= pullback["upper"]
-        retrace  = pullback["close"] <  breakout["close"]
-
-        touched = low_ok and high_ok and retrace
+        touched = (
+            pullback["low"]   <= pullback["upper"] + tol  # wick reaches band
+            and pullback["high"] >= pullback["upper"]      # body still above band
+            and pullback["close"] < breakout["close"]      # price retracing
+        )
         if not touched:
-            reasons = []
-            if not low_ok:
-                reasons.append(f"low={pullback['low']:.6g} didn't reach upper+tol={pullback['upper']+tol:.6g}")
-            if not high_ok:
-                reasons.append(f"high={pullback['high']:.6g} < upper={pullback['upper']:.6g} (body below band)")
-            if not retrace:
-                reasons.append(f"close={pullback['close']:.6g} >= breakout close={breakout['close']:.6g} (not retracing)")
-            vlog(f"  candle-{pb_offset}: no touch — {'; '.join(reasons)}")
             continue
 
         # ── Step 4 : confirmation – current closes above pullback ─────────────
         if current["close"] <= pullback["close"]:
-            vlog(f"  candle-{pb_offset}: pullback touch ✅ BUT no confirmation — "
-                 f"current close={current['close']:.6g} ≤ pullback close={pullback['close']:.6g} "
-                 f"(momentum not yet resumed — wait 1 more candle)")
-            continue
+            continue   # no momentum yet — wait for a better candle
 
         # ── All conditions met ────────────────────────────────────────────────
-        print(f"    [SIGNAL] LONG pattern: breakout={breakout_pos}c ago  "
+        candles_since = breakout_pos   # for debug logging
+        print(f"    [SIGNAL] LONG pattern: breakout={candles_since}c ago  "
               f"pullback={pb_offset}c ago  entry={current['close']:.8g}  "
               f"sl={pullback['low']:.8g}")
         return _build("LONG", "Upper Band Breakout Pullback",
                       current["close"], pullback["low"])
 
-    vlog(f"❌ NO PULLBACK: No valid pullback+confirmation found between breakout and current candle")
     return None
 
 
-def short_band_touch(df, verbose: bool = False) -> dict | None:
+def short_band_touch(df) -> dict | None:
     """Lower Band Breakdown → Bounce → SELL  (new SHORT entry only)
     ─────────────────────────────────────────────────────────────────
     Mirror of long_band_touch.  Sliding-window search:
@@ -804,13 +695,8 @@ def short_band_touch(df, verbose: bool = False) -> dict | None:
 
     SL : high of the bounce/touch candle.
     """
-    def vlog(msg):
-        if verbose:
-            print(f"      [SHORT?] {msg}")
-
     n = len(df)
     if n < BB_PERIOD + BREAKOUT_LOOKBACK + 2:
-        vlog(f"❌ Not enough candles ({n} < {BB_PERIOD + BREAKOUT_LOOKBACK + 2})")
         return None
 
     current = df.iloc[-1]
@@ -818,15 +704,9 @@ def short_band_touch(df, verbose: bool = False) -> dict | None:
     # ── Anti-sideways filters ─────────────────────────────────────────────────
     bandwidth_pct = (current["upper"] - current["lower"]) / current["mid"]
     if bandwidth_pct < MIN_BANDWIDTH_PCT:
-        vlog(f"❌ BB bandwidth too narrow: {bandwidth_pct*100:.3f}% < {MIN_BANDWIDTH_PCT*100}% "
-             f"(sideways/squeeze — no trade)")
         return None
     if current["close"] > current["mid"]:
-        vlog(f"❌ Price above mid-band: close={current['close']:.6g}  mid={current['mid']:.6g}  "
-             f"(need price < mid for SHORT)")
-        return None
-
-    vlog(f"✅ Bandwidth {bandwidth_pct*100:.3f}% OK  |  price below mid ✅")
+        return None   # price bounced back into middle zone → skip
 
     # ── Step 1+2 : find the most recent valid breakdown within window ──────────
     breakdown     = None
@@ -839,8 +719,6 @@ def short_band_touch(df, verbose: bool = False) -> dict | None:
             continue
         bd = (candidate["lower"] - candidate["close"]) / candidate["lower"]
         if bd < MIN_BREAKOUT_PCT:
-            vlog(f"  candle-{offset}: close below lower but breakdown too small "
-                 f"({bd*100:.3f}% < {MIN_BREAKOUT_PCT*100}%) — not a real breakdown")
             continue
 
         breakdown     = candidate
@@ -848,46 +726,27 @@ def short_band_touch(df, verbose: bool = False) -> dict | None:
         break
 
     if breakdown is None:
-        vlog(f"❌ BREAKDOWN GATE: No valid SHORT breakdown found in last {BREAKOUT_LOOKBACK} candles "
-             f"(need a candle that closed ≥{MIN_BREAKOUT_PCT*100}% below lower band)")
         return None
 
-    vlog(f"✅ BREAKDOWN VALID: {breakdown_pos} candles ago  "
-         f"close={breakdown['close']:.6g}  lower={breakdown['lower']:.6g}")
-
     if breakdown_pos > ENTRY_WINDOW:
-        vlog(f"❌ ENTRY WINDOW GATE: Breakdown STALE - {breakdown_pos} candles ago > {ENTRY_WINDOW} "
-             f"(spike too old, move over)")
         return None   # spike too old, move is over
 
     # ── Step 3 : find a valid bounce touch between breakdown and current ────────
-    vlog(f"  Searching for bounce touch in candles [-1...-{breakdown_pos-1}]…")
     for pb_offset in range(1, breakdown_pos):
         bounce = df.iloc[-1 - pb_offset]
         tol = abs(bounce["lower"]) * TOUCH_TOL
 
-        high_ok  = bounce["high"] >= bounce["lower"] - tol
-        low_ok   = bounce["low"]  <= bounce["lower"]
-        retrace  = bounce["close"] > breakdown["close"]
-
-        touched = high_ok and low_ok and retrace
+        touched = (
+            bounce["high"] >= bounce["lower"] - tol   # wick reaches band
+            and bounce["low"] <= bounce["lower"]       # body still below band
+            and bounce["close"] > breakdown["close"]   # price retracing upward
+        )
         if not touched:
-            reasons = []
-            if not high_ok:
-                reasons.append(f"high={bounce['high']:.6g} didn't reach lower-tol={bounce['lower']-tol:.6g}")
-            if not low_ok:
-                reasons.append(f"low={bounce['low']:.6g} > lower={bounce['lower']:.6g} (body above band)")
-            if not retrace:
-                reasons.append(f"close={bounce['close']:.6g} <= breakdown close={breakdown['close']:.6g} (not bouncing)")
-            vlog(f"  candle-{pb_offset}: no touch — {'; '.join(reasons)}")
             continue
 
         # ── Step 4 : confirmation ────────────────────────────────────────────
         if current["close"] >= bounce["close"]:
-            vlog(f"  candle-{pb_offset}: bounce touch ✅ BUT no confirmation — "
-                 f"current close={current['close']:.6g} ≥ bounce close={bounce['close']:.6g} "
-                 f"(no downward momentum yet — wait 1 more candle)")
-            continue
+            continue   # no downward momentum yet
 
         print(f"    [SIGNAL] SHORT pattern: breakdown={breakdown_pos}c ago  "
               f"bounce={pb_offset}c ago  entry={current['close']:.8g}  "
@@ -895,7 +754,6 @@ def short_band_touch(df, verbose: bool = False) -> dict | None:
         return _build("SHORT", "Lower Band Breakdown Pullback",
                       current["close"], bounce["high"])
 
-    vlog(f"❌ NO BOUNCE: No valid bounce+confirmation found between breakdown and current candle")
     return None
 
 CHECKERS = [long_band_touch, short_band_touch]
@@ -1668,16 +1526,6 @@ def discord_startup(n_symbols: int, balance: float):
         "  EXIT  : Band re-touch after extension (exit only — never opens opposite)",
         "  FILTER: No middle band activity · Min bandwidth · Min breakout distance",
         f"  {_SEP}",
-        "  FILTER RELAXATION (CONSERVATIVE)",
-        f"  • ENTRY_WINDOW: {ENTRY_WINDOW}c (was 10)",
-        f"  • MIN_BREAKOUT: {MIN_BREAKOUT_PCT*100}% (was 0.2%)",
-        f"  • MIN_BANDWIDTH: {MIN_BANDWIDTH_PCT*100}% (was 0.8%)",
-        f"  • RSI LONG: 1h≥{RSI_LONG_1H}  4h≥{RSI_LONG_4H} (was 60/55)",
-        f"  • RSI SHORT: 1h≤{RSI_SHORT_1H}  4h≤{RSI_SHORT_4H} (was 40/45)",
-        f"  • VOLUME: ≥{VOLUME_SURGE_MULT}x (was 1.5x)",
-        f"  • VELOCITY: ≥{RSI_VELOCITY_MIN} (was 4.0)",
-        f"  • LATE stage: {'ALLOWED' if not SKIP_LATE_STAGE else 'BLOCKED'}",
-        f"  • VERBOSE: {'ON (all symbols)' if VERBOSE_LOG_ALL else 'OFF (selected only)'}",
         "  SIGNAL VALIDATION (NEW)",
         f"  • Signal freshness: {SIGNAL_FRESHNESS//60} min max age",
         f"  • Price slippage tolerance: {SIGNAL_SLIPPAGE_PCT*100:.1f}%",
@@ -1694,7 +1542,7 @@ def discord_startup(n_symbols: int, balance: float):
     ])
 
     payload = {
-        "content": f"**BB SCANNER  |  {ACTIVE_PRESET} MODE  |  LATE: {'ALLOWED' if not SKIP_LATE_STAGE else 'BLOCKED'}  |  {VERBOSE_LOG_ALL and 'VERBOSE: ALL' or 'VERBOSE: SELECTED'}  |  SYSTEM ONLINE  |  {n_symbols} SYMBOLS**",
+        "content": f"**BB SCANNER  |  SYSTEM ONLINE  |  {n_symbols} SYMBOLS  |  ${balance:,.2f} PAPER  |  VALIDATION ENABLED**",
         "embeds":  [{"color": 0x3b82f6, "description": f"```\n{body}\n```"}],
     }
     _post(payload)
@@ -1708,13 +1556,8 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
 
     for i, sym in enumerate(symbols, 1):
         try:
-            watch = sym in WATCH_SYMBOLS   # verbose flag for this symbol
-
             df = fetch_df(sym)
             if df is None or len(df) < BB_PERIOD + 15:
-                if watch:
-                    print(f"  [WATCH {sym}] ❌ SKIP — could not fetch data or too few candles "
-                          f"(got {len(df) if df is not None else 0}, need {BB_PERIOD + 15})")
                 time.sleep(REQUEST_DELAY)
                 continue
 
@@ -1731,125 +1574,63 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
             near_lower = abs(last["close"] - last["lower"]) / abs(last["lower"]) < TOUCH_TOL * 3
             in_dead_zone = mid_zone and not near_upper and not near_lower
 
-            if watch:
-                print(f"\n  {'═'*60}")
-                print(f"  [WATCH {sym}]  close={last['close']:.6g}  "
-                      f"upper={last['upper']:.6g}  mid={last['mid']:.6g}  lower={last['lower']:.6g}")
-                bw = (last['upper'] - last['lower']) / last['mid'] * 100
-                print(f"  [WATCH {sym}]  bandwidth={bw:.3f}%  "
-                      f"near_upper={near_upper}  near_lower={near_lower}  "
-                      f"in_dead_zone={in_dead_zone}")
+            if not on_cooldown(sym) and not in_dead_zone:
+                for fn in CHECKERS:
+                    sig = fn(df)
+                    if sig:
+                        # ── Trend Intelligence Filter ─────────────────────────────
+                        # Runs AFTER BB signal fires. Scores the signal on:
+                        #   • RSI alignment (1h + 4h confirm direction)
+                        #   • Trend stage   (EARLY=best / MID=ok / LATE=skip)
+                        #   • RSI velocity  (4h RSI accelerating = trend just starting)
+                        #   • Volume surge  (institutional fingerprint)
+                        # Only EARLY/MID signals with volume confirmation are traded.
+                        ok, trend_info = passes_rsi_filter(sym, sig["direction"], df)
+                        if not ok:
+                            break   # not aligned / late stage / no volume → skip
 
-            if on_cooldown(sym):
-                if watch:
-                    remaining = SIGNAL_COOLDOWN - (time.time() - _last_signal.get(sym, 0))
-                    print(f"  [WATCH {sym}] ❌ SKIP — on cooldown ({remaining:.0f}s remaining)")
-                time.sleep(REQUEST_DELAY)
-                continue
+                        # Attach trend metadata to the signal for Discord + trade record
+                        sig["trend_stage"]  = trend_info.get("stage",     "?")
+                        sig["trend_score"]  = trend_info.get("score",      0)
+                        sig["trend_reason"] = trend_info.get("reason",    "")
+                        sig["rsi_1h"]       = trend_info.get("rsi_1h",   50.0)
+                        sig["rsi_4h"]       = trend_info.get("rsi_4h",   50.0)
+                        sig["rsi_vel"]      = trend_info.get("velocity",   0.0)
+                        sig["vol_ratio"]    = trend_info.get("vol_ratio",  1.0)
 
-            if in_dead_zone:
-                if watch:
-                    dist_upper = abs(last['close'] - last['upper']) / last['upper'] * 100
-                    dist_lower = abs(last['close'] - last['lower']) / abs(last['lower']) * 100
-                    print(f"  [WATCH {sym}] ❌ SKIP — price in dead zone "
-                          f"(dist to upper: {dist_upper:.3f}%  dist to lower: {dist_lower:.3f}%  "
-                          f"threshold: {TOUCH_TOL*3*100:.3f}%)")
-                time.sleep(REQUEST_DELAY)
-                continue
+                        tgt   = build_targets(df, sig)
+                        trade = trader.open_trade(sym, sig, tgt)
+                        if trade is None:
+                            break
 
-            if watch:
-                print(f"  [WATCH {sym}] ✅ Passes pre-filter — running pattern checks…")
+                        chart = make_chart(df, sig, tgt, sym)
+                        if chart is None:
+                            print(f"  [WARN] Chart skipped for {sym} – matplotlib not available. "
+                                  f"Install it with: pip install matplotlib")
+                        else:
+                            chart_size_kb = len(chart)/1024
+                            print(f"  [DEBUG] Chart generated: {chart_size_kb:.1f} KB")
+                            # Save chart locally in organized charts folder
+                            try:
+                                chart_file = os.path.join(CHARTS_DIR, f"chart_{sym.replace('/', '_')}_{int(time.time())}.png")
+                                with open(chart_file, "wb") as f:
+                                    f.write(chart)
+                                print(f"  [DEBUG] Chart saved: {chart_file}")
+                            except Exception as ex:
+                                print(f"  [WARN] Could not save chart locally: {ex}")
+                        
+                        stats = trader.stats()
+                        discord_signal_with_chart(sym, sig, tgt, trade, stats, chart)
+                        mark_cooldown(sym)
+                        found += 1
 
-            # ── VERBOSE MODE: Show rejection reason for ALL symbols when VERBOSE_LOG_ALL=True ─
-            verbose_mode = watch or VERBOSE_LOG_ALL
-            
-            signal_found = False
-            for fn in CHECKERS:
-                sig = fn(df, verbose=verbose_mode)
-                if sig:
-                    # ── Trend Intelligence Filter ─────────────────────────────
-                    # Runs AFTER BB signal fires. Scores the signal on:
-                    #   • RSI alignment (1h + 4h confirm direction)
-                    #   • Trend stage   (EARLY=best / MID=ok / LATE=skip)
-                    #   • RSI velocity  (4h RSI accelerating = trend just starting)
-                    #   • Volume surge  (institutional fingerprint)
-                    # Only EARLY/MID signals with volume confirmation are traded.
-                    ok, trend_info = passes_rsi_filter(sym, sig["direction"], df)
-                    if not ok:
-                        # ── VERBOSE: Show rejection details for all symbols in verbose mode ─
-                        if verbose_mode:
-                            print(f"  [REJECT] {sym}: BB pattern ✅ but TREND FILTER blocked it")
-                            print(f"               {trend_info.get('reason', 'no reason')}")
-                            
-                            # Show failed filters if available
-                            failed = trend_info.get('failed_filters', [])
-                            if failed:
-                                print(f"               ❌ FAILED: {'  '.join(failed)}")
-                            
-                            r1h = trend_info.get('rsi_1h', '?')
-                            r4h = trend_info.get('rsi_4h', '?')
-                            vr  = trend_info.get('vol_ratio', '?')
-                            stg = trend_info.get('stage', '?')
-                            if sig["direction"] == "LONG":
-                                print(f"               NEED: RSI_1h≥{RSI_LONG_1H}  RSI_4h≥{RSI_LONG_4H}  "
-                                      f"vol_ratio≥{VOLUME_SURGE_MULT}")
-                            else:
-                                print(f"               NEED: RSI_1h≤{RSI_SHORT_1H}  RSI_4h≤{RSI_SHORT_4H}  "
-                                      f"vol_ratio≥{VOLUME_SURGE_MULT}")
-                            print(f"               GOT:  RSI_1h={r1h}  RSI_4h={r4h}  "
-                                  f"vol_ratio={vr}  stage={stg}")
-                        break   # not aligned / volume too low → skip
-
-                    # Attach trend metadata to the signal for Discord + trade record
-                    sig["trend_stage"]  = trend_info.get("stage",     "?")
-                    sig["trend_score"]  = trend_info.get("score",      0)
-                    sig["trend_reason"] = trend_info.get("reason",    "")
-                    sig["rsi_1h"]       = trend_info.get("rsi_1h",   50.0)
-                    sig["rsi_4h"]       = trend_info.get("rsi_4h",   50.0)
-                    sig["rsi_vel"]      = trend_info.get("velocity",   0.0)
-                    sig["vol_ratio"]    = trend_info.get("vol_ratio",  1.0)
-
-                    tgt   = build_targets(df, sig)
-                    trade = trader.open_trade(sym, sig, tgt)
-                    if trade is None:
-                        if watch:
-                            print(f"  [WATCH {sym}] ❌ Signal + trend OK but open_trade() blocked it "
-                                  f"(max trades={MAX_OPEN_TRADES} or duplicate symbol)")
-                        break
-
-                    chart = make_chart(df, sig, tgt, sym)
-                    if chart is None:
-                        print(f"  [WARN] Chart skipped for {sym} – matplotlib not available. "
-                              f"Install it with: pip install matplotlib")
-                    else:
-                        chart_size_kb = len(chart)/1024
-                        print(f"  [DEBUG] Chart generated: {chart_size_kb:.1f} KB")
-                        # Save chart locally in organized charts folder
-                        try:
-                            chart_file = os.path.join(CHARTS_DIR, f"chart_{sym.replace('/', '_')}_{int(time.time())}.png")
-                            with open(chart_file, "wb") as f:
-                                f.write(chart)
-                            print(f"  [DEBUG] Chart saved: {chart_file}")
-                        except Exception as ex:
-                            print(f"  [WARN] Could not save chart locally: {ex}")
-                    
-                    stats = trader.stats()
-                    discord_signal_with_chart(sym, sig, tgt, trade, stats, chart)
-                    mark_cooldown(sym)
-                    found += 1
-                    signal_found = True
-
-                    ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-                    stage_tag = sig.get("trend_stage", "?")
-                    score_tag = sig.get("trend_score", 0)
-                    print(f"  [{ts}] 🔔 {sig['direction']} {sym}  "
-                          f"Entry={sig['entry']}  SL={sig['sl']}  "
-                          f"[{stage_tag} score={score_tag}]")
-                    break   # one signal per symbol per scan
-
-            if watch and not signal_found:
-                print(f"  [WATCH {sym}] ── end of checks, no signal fired this scan")
-                print(f"  {'═'*60}\n")
+                        ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+                        stage_tag = sig.get("trend_stage", "?")
+                        score_tag = sig.get("trend_score", 0)
+                        print(f"  [{ts}] 🔔 {sig['direction']} {sym}  "
+                              f"Entry={sig['entry']}  SL={sig['sl']}  "
+                              f"[{stage_tag} score={score_tag}]")
+                        break   # one signal per symbol per scan
 
             if i % 50 == 0 or i == len(symbols):
                 ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
