@@ -21,6 +21,9 @@ RSI_LOW = int(os.getenv('RSI_LOW', '45'))
 RSI_HIGH = int(os.getenv('RSI_HIGH', '65'))
 TOP_N_SYMBOLS = int(os.getenv('TOP_N_SYMBOLS', '100'))
 
+# Get port from Render environment, default to 8080 if not set
+PORT = int(os.getenv('PORT', 8080))
+
 # --- LOGGING ---
 logging.basicConfig(
     level=logging.INFO,
@@ -72,7 +75,8 @@ def index():
     return render_template_string(HTML_TEMPLATE, signals=reversed(signal_history))
 
 def run_web_server():
-    app.run(host='0.0.0.0', port=8080, log_level=logging.WARNING)
+    # Removed log_level argument and used PORT env var
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
 
 # --- SCANNER LOGIC ---
 
