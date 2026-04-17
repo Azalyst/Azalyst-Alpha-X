@@ -413,6 +413,6 @@ Users should conduct independent due diligence and consult qualified financial p
 
 ---
 
-Built by Azalyst | Azalyst Quant Research
+Built by [Azalyst](https://github.com/azalyst) | Azalyst Alpha Quant Research
 
 "Evidence over claims. Always."
