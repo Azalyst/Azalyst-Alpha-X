@@ -117,6 +117,13 @@ DISCORD_WEBHOOK  = (
     "G04AVF9M0nCp0FYPNDgBwyPzUee-9IMQFxr88uH88euQmaD4JM4LbV1cTofMqGqiz3fX"
 )
 
+# ── Proxy / geo-block bypass ────────────────────────────────────────────────
+# If Binance returns HTTP 451 (geo-blocked), set your proxy here.
+# Formats:  "socks5://user:pass@host:port"
+#           "http://user:pass@host:port"
+#           ""   ← leave blank to use no proxy (direct connection)
+HTTPS_PROXY = ""
+
 BB_PERIOD        = 200          # Bollinger Band period
 BB_SD            = 1            # Standard deviation multiplier
 TIMEFRAME        = "10m"
@@ -161,22 +168,46 @@ if not os.path.exists(CHARTS_DIR):
 #                  also hits dapi.binance.com coin-futures and
 #                  times-out in regions where that endpoint is blocked)
 # ═══════════════════════════════════════════════════════════════════
-FAPI_BASE = "https://fapi.binance.com"      # USDT-margined perpetuals only
+# Fallback endpoints tried in order until one responds without a 451.
+# fapi.binance.com is the primary; fapi1/fapi2 are load-balanced mirrors
+# that sometimes bypass regional blocks.
+FAPI_ENDPOINTS = [
+    "https://fapi.binance.com",
+    "https://fapi1.binance.com",
+    "https://fapi2.binance.com",
+]
+FAPI_BASE = FAPI_ENDPOINTS[0]   # updated at startup by _pick_endpoint()
 
 _SESSION = requests.Session()
 _SESSION.headers.update({"Accept": "application/json"})
-_SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})  # Better Cloudflare handling
+_SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})
 
-# ── Proxy support ────────────────────────────────────────────────
-# Set the https_proxy environment variable (e.g. socks5://user:pass@host:1080)
-# to route all Binance requests through a SOCKS5 proxy.  Useful when the
-# Railway container's IP is geo-blocked by Binance (HTTP 451).
-_PROXY_URL = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
-if _PROXY_URL:
-    _SESSION.proxies.update({"http": _PROXY_URL, "https": _PROXY_URL})
-    print(f"  [PROXY] Outbound requests routed via proxy: {_PROXY_URL}")
-else:
-    print("  [PROXY] No proxy configured – connecting directly to Binance")
+# Apply proxy if configured
+if HTTPS_PROXY:
+    _SESSION.proxies.update({"https": HTTPS_PROXY, "http": HTTPS_PROXY})
+    print(f"  [INFO] Proxy configured: {HTTPS_PROXY}")
+
+
+def _pick_endpoint() -> str:
+    """
+    Try each FAPI endpoint and return the first one that responds with
+    HTTP 200 on /fapi/v1/ping.  Falls back to the first entry on total failure.
+    Updates the global FAPI_BASE so all subsequent calls use the working host.
+    """
+    global FAPI_BASE
+    for base in FAPI_ENDPOINTS:
+        try:
+            r = _SESSION.get(f"{base}/fapi/v1/ping", timeout=8)
+            if r.status_code == 200:
+                FAPI_BASE = base
+                if base != FAPI_ENDPOINTS[0]:
+                    print(f"  [INFO] Using fallback endpoint: {base}")
+                return base
+        except Exception:
+            pass
+    # None reachable — keep default and let the normal error path handle it
+    FAPI_BASE = FAPI_ENDPOINTS[0]
+    return FAPI_BASE
 
 # ═══════════════════════════════════════════════════════════════════
 #  ③  SIGNAL COOLDOWN & VALIDATION
@@ -1257,6 +1288,11 @@ def main():
     s      = trader.stats()
     print(f"  Paper Portfolio  →  Balance: ${s['balance']:,.2f}  "
           f"·  Open: {s['open']}  ·  Closed: {s['closed']}")
+
+    # Pick the best reachable Binance endpoint (handles 451 geo-blocks)
+    print("  Probing Binance endpoints...")
+    _pick_endpoint()
+    print(f"  Using endpoint : {FAPI_BASE}")
 
     # Robust symbol fetch – Termux / mobile networks can drop the first
     # call. Retry forever with backoff instead of crashing.
