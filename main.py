@@ -1,7 +1,7 @@
 """
 ╔═══════════════════════════════════════════════════════════════════╗
 ║   BB SCANNER  –  INSTITUTIONAL GRADE                             ║
-║   Binance Perpetual Futures  |  5m  |  BB(200, SD 1)             ║
+║   Binance Perpetual Futures  |  1m  |  BB(200, SD 1)             ║
 ║   Paper Trading: 30x Leverage  |  Discord Webhook Alerts         ║
 ║   Runs on:  Windows / Linux / macOS / Termux (Android)           ║
 ╚═══════════════════════════════════════════════════════════════════╝
@@ -117,19 +117,12 @@ DISCORD_WEBHOOK  = (
     "G04AVF9M0nCp0FYPNDgBwyPzUee-9IMQFxr88uH88euQmaD4JM4LbV1cTofMqGqiz3fX"
 )
 
-# ── Proxy / geo-block bypass ────────────────────────────────────────────────
-# If Binance returns HTTP 451 (geo-blocked), set your proxy here.
-# Formats:  "socks5://user:pass@host:port"
-#           "http://user:pass@host:port"
-#           ""   ← leave blank to use no proxy (direct connection)
-HTTPS_PROXY = ""
-
 BB_PERIOD        = 200          # Bollinger Band period
 BB_SD            = 1            # Standard deviation multiplier
-TIMEFRAME        = "10m"
+TIMEFRAME        = "1m"
 CANDLE_LIMIT     = 320          # must be > BB_PERIOD + 50
-SCAN_INTERVAL    = 900          # seconds between full scans (900 = 15 min)
-LOOKBACK_WINDOW  = 600          # look back 10 min (600s) to check if conditions matched
+SCAN_INTERVAL    = 300          # seconds between full scans (300 = 5 min)
+LOOKBACK_WINDOW  = 300          # look back 5 min (300s) to check if conditions matched
 REQUEST_DELAY    = 0.15         # seconds between API calls (rate-limit safe)
 SWING_LOOKBACK   = 60           # candles back to find swing high / low
 TOUCH_TOL        = 0.0025       # 0.25 % – band "touch" tolerance
@@ -168,68 +161,11 @@ if not os.path.exists(CHARTS_DIR):
 #                  also hits dapi.binance.com coin-futures and
 #                  times-out in regions where that endpoint is blocked)
 # ═══════════════════════════════════════════════════════════════════
-# Fallback endpoints tried in order until one responds without a 451.
-# fapi.binance.com is the primary; fapi1/fapi2 are load-balanced mirrors
-# that sometimes bypass regional blocks.
-FAPI_ENDPOINTS = [
-    "https://fapi.binance.com",
-    "https://fapi1.binance.com",
-    "https://fapi2.binance.com",
-]
-FAPI_BASE = FAPI_ENDPOINTS[0]   # updated at startup by _pick_endpoint()
+FAPI_BASE = "https://fapi.binance.com"      # USDT-margined perpetuals only
 
 _SESSION = requests.Session()
 _SESSION.headers.update({"Accept": "application/json"})
-_SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})
-
-# Apply proxy if configured
-if HTTPS_PROXY:
-    _SESSION.proxies.update({"https": HTTPS_PROXY, "http": HTTPS_PROXY})
-    print(f"  [INFO] Proxy configured: {HTTPS_PROXY}")
-
-
-def _pick_endpoint() -> str:
-    """
-    Try each FAPI endpoint and return the first one that:
-      1. Responds with HTTP 200 on /fapi/v1/exchangeInfo, AND
-      2. Returns valid JSON that contains the expected "symbols" key.
-
-    Using /exchangeInfo (instead of /ping) catches endpoints that are
-    reachable but return empty or malformed bodies — the root cause of
-    JSONDecodeError when fapi1/fapi2 mirrors are degraded.
-
-    Falls back to the first entry only if every endpoint fails, so the
-    normal error path can surface a clear message.
-    Updates the global FAPI_BASE so all subsequent calls use the working host.
-    """
-    global FAPI_BASE
-    for base in FAPI_ENDPOINTS:
-        try:
-            r = _SESSION.get(f"{base}/fapi/v1/exchangeInfo", timeout=10)
-            if r.status_code != 200:
-                print(f"  [WARN] Endpoint {base} returned HTTP {r.status_code} — skipping")
-                continue
-            try:
-                body = r.json()
-            except Exception as json_err:
-                print(f"  [WARN] Endpoint {base} returned invalid JSON ({json_err}) — skipping")
-                continue
-            if "symbols" not in body:
-                print(f"  [WARN] Endpoint {base} response missing 'symbols' key — skipping")
-                continue
-            # Endpoint passed all checks
-            FAPI_BASE = base
-            if base != FAPI_ENDPOINTS[0]:
-                print(f"  [INFO] Primary endpoint unavailable. Using fallback: {base}")
-            else:
-                print(f"  [INFO] Endpoint {base} validated (exchangeInfo OK)")
-            return base
-        except Exception as e:
-            print(f"  [WARN] Endpoint {base} unreachable ({e.__class__.__name__}: {e}) — skipping")
-    # No endpoint passed — keep default and let the normal error path surface it
-    print(f"  [ERROR] All FAPI endpoints failed validation. Falling back to {FAPI_ENDPOINTS[0]}")
-    FAPI_BASE = FAPI_ENDPOINTS[0]
-    return FAPI_BASE
+_SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})  # Better Cloudflare handling
 
 # ═══════════════════════════════════════════════════════════════════
 #  ③  SIGNAL COOLDOWN & VALIDATION
@@ -243,8 +179,8 @@ def on_cooldown(sym: str) -> bool:
 def mark_cooldown(sym: str):
     _last_signal[sym] = time.time()
 
-# Signal validation: only execute if condition is FRESH (within 10 min) AND price hasn't moved >2%
-SIGNAL_FRESHNESS = 600  # 10 minutes max age for a signal
+# Signal validation: only execute if condition is FRESH (within 1 min) AND price hasn't moved >2%
+SIGNAL_FRESHNESS = 60   # 1 minute max age for a signal
 SIGNAL_SLIPPAGE_PCT = 0.02  # Allow 2% price movement before rejecting signal
 
 def is_signal_valid(sym: str, current_price: float) -> bool:
@@ -255,7 +191,7 @@ def is_signal_valid(sym: str, current_price: float) -> bool:
     cached = _signal_cache[sym]
     age = time.time() - cached["timestamp"]
     
-    # ①  Signal must be fresh (< 10 min old)
+    # ①  Signal must be fresh (< 1 min old)
     if age > SIGNAL_FRESHNESS:
         print(f"    [REJECT] {sym}: Signal too old ({age:.0f}s > {SIGNAL_FRESHNESS}s)")
         return False
@@ -285,50 +221,21 @@ def cache_signal(sym: str, sig: dict, current_price: float):
 def get_symbols() -> list[str]:
     """
     Fetch all active USDT-margined perpetual symbols directly from
-    /fapi/v1/exchangeInfo – no dapi.binance.com call, no ccxt load_markets() timeout.
-
-    Iterates FAPI_ENDPOINTS in order so that if FAPI_BASE was set to a
-    working endpoint by _pick_endpoint(), it is tried first.  Each endpoint
-    is validated independently: HTTP status, JSON decodability, and presence
-    of the "symbols" key.  This prevents a JSONDecodeError from an empty/
-    malformed response (e.g. fapi1/fapi2 returning garbage) from crashing
-    the bot.  Raises RuntimeError if every endpoint fails.
+    fapi.binance.com/fapi/v1/exchangeInfo – no dapi.binance.com call,
+    no ccxt load_markets() timeout.
     """
-    # Build probe order: preferred endpoint first, then the rest
-    ordered = [FAPI_BASE] + [ep for ep in FAPI_ENDPOINTS if ep != FAPI_BASE]
-
-    for base in ordered:
-        try:
-            url  = f"{base}/fapi/v1/exchangeInfo"
-            resp = _SESSION.get(url, timeout=15)
-            if resp.status_code != 200:
-                print(f"  [WARN] get_symbols: {base} returned HTTP {resp.status_code} — trying next")
-                continue
-            try:
-                data = resp.json()
-            except Exception as json_err:
-                print(f"  [WARN] get_symbols: {base} returned invalid JSON ({json_err}) — trying next")
-                continue
-            if "symbols" not in data:
-                print(f"  [WARN] get_symbols: {base} response missing 'symbols' key — trying next")
-                continue
-            # Success — parse and return
-            print(f"  [INFO] get_symbols: fetched exchange info from {base}")
-            syms = []
-            for s in data["symbols"]:
-                if (s.get("quoteAsset") == "USDT"
-                        and s.get("status")       == "TRADING"
-                        and s.get("contractType") == "PERPETUAL"):
-                    # store in ccxt-style  BTC/USDT  so rest of code is unchanged
-                    syms.append(s["baseAsset"] + "/USDT")
-            return sorted(set(syms))
-        except Exception as e:
-            print(f"  [WARN] get_symbols: {base} unreachable ({e.__class__.__name__}: {e}) — trying next")
-
-    raise RuntimeError(
-        "get_symbols: all FAPI endpoints failed to return valid exchangeInfo. "
-        "Check network connectivity or configure HTTPS_PROXY to bypass geo-blocks."
-    )
+    url  = f"{FAPI_BASE}/fapi/v1/exchangeInfo"
+    resp = _SESSION.get(url, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    syms = []
+    for s in data["symbols"]:
+        if (s.get("quoteAsset") == "USDT"
+                and s.get("status")       == "TRADING"
+                and s.get("contractType") == "PERPETUAL"):
+            # store in ccxt-style  BTC/USDT  so rest of code is unchanged
+            syms.append(s["baseAsset"] + "/USDT")
+    return sorted(set(syms))
 
 
 def _raw_symbol(ccxt_sym: str) -> str:
@@ -1329,7 +1236,7 @@ def main():
     print()
     print("╔═══════════════════════════════════════════════════════════════╗")
     print("║   BB SCANNER  –  INSTITUTIONAL GRADE                         ║")
-    print("║   Binance Perpetual  ·  5m  ·  BB(200,1)  ·  30x Paper       ║")
+    print("║   Binance Perpetual  ·  1m  ·  BB(200,1)  ·  30x Paper       ║")
     print("╚═══════════════════════════════════════════════════════════════╝")
     print(f"  Platform : {sys.platform}    Python : {sys.version.split()[0]}")
     print(f"  Charts   : {'ON (matplotlib)' if HAS_CHART else 'OFF (text-only Discord alerts)'}")
@@ -1339,11 +1246,6 @@ def main():
     s      = trader.stats()
     print(f"  Paper Portfolio  →  Balance: ${s['balance']:,.2f}  "
           f"·  Open: {s['open']}  ·  Closed: {s['closed']}")
-
-    # Pick the best reachable Binance endpoint (handles 451 geo-blocks)
-    print("  Probing Binance endpoints...")
-    _pick_endpoint()
-    print(f"  Using endpoint : {FAPI_BASE}")
 
     # Robust symbol fetch – Termux / mobile networks can drop the first
     # call. Retry forever with backoff instead of crashing.
