@@ -167,6 +167,17 @@ _SESSION = requests.Session()
 _SESSION.headers.update({"Accept": "application/json"})
 _SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})  # Better Cloudflare handling
 
+# ── Proxy support ────────────────────────────────────────────────
+# Set the https_proxy environment variable (e.g. socks5://user:pass@host:1080)
+# to route all Binance requests through a SOCKS5 proxy.  Useful when the
+# Railway container's IP is geo-blocked by Binance (HTTP 451).
+_PROXY_URL = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
+if _PROXY_URL:
+    _SESSION.proxies.update({"http": _PROXY_URL, "https": _PROXY_URL})
+    print(f"  [PROXY] Outbound requests routed via proxy: {_PROXY_URL}")
+else:
+    print("  [PROXY] No proxy configured – connecting directly to Binance")
+
 # ═══════════════════════════════════════════════════════════════════
 #  ③  SIGNAL COOLDOWN & VALIDATION
 # ═══════════════════════════════════════════════════════════════════
