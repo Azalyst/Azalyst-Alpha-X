@@ -1,6 +1,7 @@
 # Azalyst Alpha X
 
 An institutional-style quantitative research platform for discovering and validating systematic alpha signals in cryptocurrency markets. Built as a personal project. Not a hedge fund. Not a financial product. Just a passion for systematic research.
+
 ---
 
 ### Strategic Architecture
