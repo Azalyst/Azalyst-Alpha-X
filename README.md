@@ -73,9 +73,9 @@ Each signal that passes the RSI alignment filter is scored and classified into o
 
 | Stage | 4h RSI Range | Interpretation | Action |
 |-------|-------------|----------------|--------|
-| 🌱 **EARLY** | 55 – 68 | Momentum just starting to build. Price has not run yet. Best risk-to-reward. | ✅ Execute |
-| 📈 **MID** | 68 – 80 | Trend confirmed and running. Still valid but extension is partial. | ✅ Execute |
-| ⚠️ **LATE** | > 80 | Move already ran (equivalent to SKL at RSI 90+ on CoinGlass heatmap). | ❌ Skip |
+|  **EARLY** | 55 – 68 | Momentum just starting to build. Price has not run yet. Best risk-to-reward. |  Execute |
+|  **MID** | 68 – 80 | Trend confirmed and running. Still valid but extension is partial. | Execute |
+|  **LATE** | > 80 | Move already ran (equivalent to SKL at RSI 90+ on CoinGlass heatmap). |  Skip |
 
 LATE-stage signals are rejected by default (`SKIP_LATE_STAGE = True`). This can be overridden for research purposes.
 
@@ -100,7 +100,7 @@ A signal is rejected regardless of RSI or stage classification if the signal can
 
 - **Minimum threshold:** Signal candle volume ≥ 1.5× the 20-candle rolling average
 - **Rationale:** Sustainable trends are always initiated by above-average volume as institutional participants accumulate or distribute. Breakouts on sub-average volume are statistical noise and revert at high frequency.
-- Signals passing the 2.25× threshold (1.5× the minimum) are flagged with a 🔥 indicator in Discord alerts.
+- Signals passing the 2.25× threshold (1.5× the minimum) are flagged with a  indicator in Discord alerts.
 
 ---
 
@@ -320,10 +320,10 @@ TP2  Fib 1.618   : 0.02013   [5.3x R:R]
 BB-Touch Exit    : DYNAMIC  (Upper BB at touch)
 ────────────────────────────────────────────
 TREND INTELLIGENCE
-Stage            : 🌱EARLY   Score=74/100
+Stage            : EARLY   Score=74/100
 RSI 1h / 4h      : 63.2  /  58.7
-RSI Velocity     : +6.4 pts/3c (4h accel) 🚀
-Volume Surge     : 1.8x avg ✅
+RSI Velocity     : +6.4 pts/3c (4h accel) 
+Volume Surge     : 1.8x avg 
 ────────────────────────────────────────────
 ```
 
