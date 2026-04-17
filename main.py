@@ -28,7 +28,9 @@ LONG  exit → price first extends ABOVE upper band, then re-touches upper band 
              (Upper Band Recross is EXIT only — never opens a new SHORT)
 SHORT exit → price first extends BELOW lower band, then re-touches lower band → CLOSE
              (Lower Band Recross is EXIT only — never opens a new LONG)
-Fallback   → Upper / Lower Bollinger Band (targets removed — using band touch only)
+Fallback   → Upper / Lower Bollinger Band — DYNAMIC (live band each scan,
+             NOT frozen at entry). Exit fires wherever the band is at the
+             moment of the touch.
 Stop Loss  → Low (Long) or High (Short) of pullback/bounce touch candle
 
 ═══════════════════════════════════════════════════════════════════
@@ -446,6 +448,21 @@ def short_band_touch(df) -> dict | None:
 CHECKERS = [long_band_touch, short_band_touch]
 
 # ── Targets ───────────────────────────────────────────────────────────────────
+#
+#  IMPORTANT — WHAT IS FIXED AT ENTRY vs WHAT IS DYNAMIC
+#  ──────────────────────────────────────────────────────
+#  FIXED at entry time (these never change after trade is opened):
+#     • SL          – low of pullback candle (LONG) / high of bounce candle (SHORT)
+#     • TP1 / TP2   – Fibonacci 1.272 / 1.618 extensions of recent swing range
+#
+#  DYNAMIC (recomputed every scan from the LIVE upper / lower band):
+#     • BB-touch exit – handled in PaperTrader.update() using cur["upper"]
+#                       / cur["lower"] of the latest candle — never frozen.
+#
+#  `bb_at_entry` below is only a REFERENCE SNAPSHOT of where the band was when
+#  the trade opened. It is NOT used as an exit level. The real exit happens at
+#  whatever the band is at the moment of the touch in some future scan cycle.
+# ──────────────────────────────────────────────────────────────────────────────
 def build_targets(df: pd.DataFrame, sig: dict) -> dict:
     e  = sig["entry"]
     sl = sig["sl"]
@@ -456,22 +473,22 @@ def build_targets(df: pd.DataFrame, sig: dict) -> dict:
     if d == "LONG":
         t1 = round(e + move * 1.272, 8)
         t2 = round(e + move * 1.618, 8)
-        fb = round(float(df.iloc[-1]["upper"]), 8)
+        bb_ref = round(float(df.iloc[-1]["upper"]), 8)   # reference only
         return {
             "tp1": t1 if t1 > e else None,
             "tp2": t2 if t2 > e else None,
-            "fallback": fb,
+            "bb_at_entry": bb_ref,       # display reference, NOT an exit level
             "swing_high": round(sh, 8),
             "swing_low":  round(sl_, 8),
         }
     else:
         t1 = round(e - move * 1.272, 8)
         t2 = round(e - move * 1.618, 8)
-        fb = round(float(df.iloc[-1]["lower"]), 8)
+        bb_ref = round(float(df.iloc[-1]["lower"]), 8)   # reference only
         return {
             "tp1": t1 if t1 < e else None,
             "tp2": t2 if t2 < e else None,
-            "fallback": fb,
+            "bb_at_entry": bb_ref,       # display reference, NOT an exit level
             "swing_high": round(sh, 8),
             "swing_low":  round(sl_, 8),
         }
@@ -532,7 +549,10 @@ class PaperTrader:
             "sl":        sl,
             "tp1":       targets.get("tp1"),
             "tp2":       targets.get("tp2"),
-            "fallback":  targets["fallback"],
+            # BB snapshot at entry — REFERENCE ONLY for charts / alerts.
+            # The actual BB-touch exit is DYNAMIC, evaluated live every scan
+            # cycle against the current upper / lower band in update().
+            "bb_at_entry": targets["bb_at_entry"],
             "notional":  round(notional, 4),
             "margin":    round(margin,   4),
             "leverage":  LEVERAGE,
@@ -545,7 +565,10 @@ class PaperTrader:
             # Bollinger Band AFTER entry.  The exit fires on the NEXT touch of
             # that same band (Upper for LONG, Lower for SHORT).
             # This flag survives across many scan cycles correctly.
-            "extended":  False,
+            "extended":     False,
+            # Live BB value at the moment the band-touch exit fires.
+            # Populated in update(). None means exit did not trigger via band.
+            "exit_bb_level": None,
         }
         self.open_trades.append(trade)
         self._save()
@@ -570,7 +593,15 @@ class PaperTrader:
             d  = t["direction"]
             cp = cr = None                          # close_price, close_reason
 
-            # ── Band-touch exit (highest priority, checked before TP/SL) ─────
+            # ── Stop-Loss check (FIRST — always protects capital) ─────────────
+            # SL must be evaluated before the band-touch exit so a loose band
+            # touch can never produce a loss worse than the intended SL level.
+            if d == "LONG"  and px <= t["sl"]:
+                cp, cr = t["sl"], "SL ❌ Stop Loss"
+            elif d == "SHORT" and px >= t["sl"]:
+                cp, cr = t["sl"], "SL ❌ Stop Loss"
+
+            # ── Band-touch exit (checked after SL, before TP) ─────────────────
             #
             #  LONG  exit rule : price must first EXTEND above the upper band
             #                    (t["extended"] = True), then on the NEXT time
@@ -582,7 +613,7 @@ class PaperTrader:
             #                    it touches/crosses back to the lower band → EXIT.
             #                    This is NOT a new long entry — it is exit-only.
             #
-            if df_dict and t["symbol"] in df_dict:
+            if cp is None and df_dict and t["symbol"] in df_dict:
                 df  = df_dict[t["symbol"]]
                 if len(df) >= 2:
                     cur  = df.iloc[-1]   # most recent completed candle
@@ -594,51 +625,59 @@ class PaperTrader:
                     tol_l = abs(lower) * TOUCH_TOL
 
                     if d == "LONG":
-                        # Phase 1 – wait for price to extend ABOVE upper band
+                        # Phase 1 – wait for price to extend ABOVE upper band.
+                        # BUG FIX: use candle HIGH (not close) — a wick above the
+                        # band counts as an extension even if close pulls back.
                         if not t["extended"]:
-                            if cur["close"] > upper or prev["close"] > upper:
+                            if cur["high"] > upper or prev["high"] > upper:
                                 t["extended"] = True
                                 print(f"    [EXTEND] {t['id']} {t['symbol']} "
                                       f"LONG extended above upper band")
 
-                        # Phase 2 – once extended, exit on next upper-band TOUCH
-                        #           (candle low wicks down to the band, OR close ≤ band)
+                        # Phase 2 – once extended, exit on next upper-band TOUCH.
+                        # BUG FIX: require cur["high"] >= upper so the candle
+                        # MUST have reached the band from above.  The old check
+                        # (high >= upper - tol) was so loose that a candle BELOW
+                        # the band and merely wicking upward toward it could fire
+                        # the exit at a worse-than-SL close price.
                         elif t["extended"]:
                             touching = (
-                                cur["low"]  <= upper + tol_u   # wick touches band
-                                and cur["high"] >= upper - tol_u  # price is at band level
+                                cur["high"] >= upper              # candle reached band level
+                                and cur["low"]  <= upper + tol_u  # wick at / around band
                             )
                             if touching:
                                 cp, cr = px, "Upper Band Touch Exit ✅"
+                                t["exit_bb_level"] = round(float(upper), 8)
 
                     elif d == "SHORT":
-                        # Phase 1 – wait for price to extend BELOW lower band
+                        # Phase 1 – wait for price to extend BELOW lower band.
+                        # BUG FIX: use candle LOW (not close).
                         if not t["extended"]:
-                            if cur["close"] < lower or prev["close"] < lower:
+                            if cur["low"] < lower or prev["low"] < lower:
                                 t["extended"] = True
                                 print(f"    [EXTEND] {t['id']} {t['symbol']} "
                                       f"SHORT extended below lower band")
 
-                        # Phase 2 – once extended, exit on next lower-band TOUCH
-                        #           (candle high wicks up to the band, OR close ≥ band)
+                        # Phase 2 – once extended, exit on next lower-band TOUCH.
+                        # BUG FIX: require cur["low"] <= lower so the candle
+                        # MUST have reached the band from below.
                         elif t["extended"]:
                             touching = (
-                                cur["high"] >= lower - tol_l   # wick touches band
-                                and cur["low"]  <= lower + tol_l  # price is at band level
+                                cur["low"]  <= lower              # candle reached band level
+                                and cur["high"] >= lower - tol_l  # wick at / around band
                             )
                             if touching:
                                 cp, cr = px, "Lower Band Touch Exit ✅"
+                                t["exit_bb_level"] = round(float(lower), 8)
 
-            # Standard exit checks (only if not already exited via band touch)
+            # ── TP checks (only if SL and band-touch have not already fired) ──
             if cp is None:
                 if d == "LONG":
-                    if   px <= t["sl"]:                           cp, cr = t["sl"],  "SL ❌ Stop Loss"
-                    elif t["tp2"] and px >= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
+                    if   t["tp2"] and px >= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
                     elif t["tp1"] and px >= t["tp1"]:             cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
                     else: t["upnl"] = round((px - t["entry"]) / t["entry"] * t["notional"], 4)
                 else:
-                    if   px >= t["sl"]:                           cp, cr = t["sl"],  "SL ❌ Stop Loss"
-                    elif t["tp2"] and px <= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
+                    if   t["tp2"] and px <= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
                     elif t["tp1"] and px <= t["tp1"]:             cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
                     else: t["upnl"] = round((t["entry"] - px) / t["entry"] * t["notional"], 4)
 
@@ -765,7 +804,11 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
     hline(sig["sl"],       "#ef4444", "SL",           lw=1.2)
     hline(tgt.get("tp1"), "#22c55e", "TP1 1.272",    lw=1.0)
     hline(tgt.get("tp2"), "#4ade80", "TP2 1.618",    lw=0.9, ls="-.")
-    hline(tgt["fallback"], "#60a5fa", "Fallback BB",  lw=0.9, ls=":")
+    # NOTE: the BB-touch exit is DYNAMIC — it's whatever the upper / lower
+    # band curve is at the moment of the touch in some future scan. We do NOT
+    # draw a frozen horizontal fallback line here because that would be
+    # misleading. The live Bollinger Band curves above already show the
+    # exit level as it evolves each candle.
 
     # ── X axis labels ─────────────────────────────────────────────────────────
     step = max(1, n // 10)
@@ -950,6 +993,8 @@ def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
     bal_v       = stats["balance"]
     ret_v       = stats["ret_pct"]
     win_v       = stats["win_rate"]
+    bb_ref      = tgt["bb_at_entry"]
+    bb_label    = "Upper BB" if is_long else "Lower BB"
 
     body = "\n".join([
         f"  {d}   {pair}",
@@ -960,7 +1005,8 @@ def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
         f"  {_kv('Stop Loss',    f'{sl}   ({rsk_pct:.2f}% risk)')}",
         f"  {_kv('TP1  Fib 1.272', f'{tp1_str}   [{tp1_rr}]')}",
         f"  {_kv('TP2  Fib 1.618', f'{tp2_str}   [{tp2_rr}]')}",
-        f"  {_kv('Fallback BB',  str(tgt['fallback']))}",
+        f"  {_kv('BB-Touch Exit', f'DYNAMIC  ({bb_label} at touch)')}",
+        f"  {_kv(f'  {bb_label} now', f'{bb_ref}   (entry snapshot — band moves every candle)')}",
         f"  {_SEP}",
         f"  {_kv('Swing High',   str(tgt['swing_high']))}",
         f"  {_kv('Swing Low',    str(tgt['swing_low']))}",
@@ -1014,6 +1060,21 @@ def discord_close(trade: dict, stats: dict):
     _w   = stats["wins"]
     _l   = stats["losses"]
 
+    # If this trade closed via the dynamic band-touch exit, show BOTH the
+    # entry-time BB snapshot and the LIVE band value that actually triggered
+    # the close. This makes it obvious that the BB exit is not a frozen level.
+    bb_entry = trade.get("bb_at_entry")
+    bb_exit  = trade.get("exit_bb_level")
+    bb_rows  = []
+    if bb_exit is not None and bb_entry is not None:
+        drift_pct = (bb_exit - bb_entry) / bb_entry * 100
+        bb_rows = [
+            f"  {_kv('BB at entry',  f'{bb_entry}   (reference snapshot)')}",
+            f"  {_kv('BB at exit',   f'{bb_exit}   (LIVE — triggered close)')}",
+            f"  {_kv('BB drift',     f'{drift_pct:+.2f}%   over life of trade')}",
+            f"  {_SEP}",
+        ]
+
     body = "\n".join([
         f"  CLOSED   {pair}   ({trade['direction']})   {result}",
         f"  {trade['close_reason']}",
@@ -1025,6 +1086,7 @@ def discord_close(trade: dict, stats: dict):
         f"  {_kv('Exit',        str(trade['close_price']))}",
         f"  {_kv('PnL',         f'$ {rpnl:>+12,.2f}   ({pct:+.2f}%)')}",
         f"  {_SEP}",
+        *bb_rows,
         f"  {_kv('Balance',     f'$ {_bal:>12,.2f}')}",
         f"  {_kv('Return',      f'{_ret:+.2f}%')}",
         f"  {_kv('Win Rate',    f'{_wr}%   ({_w}W / {_l}L)')}",
@@ -1120,10 +1182,11 @@ def discord_startup(n_symbols: int, balance: float):
         "  Stale or slipped signals are REJECTED (no trade opens)",
         f"  {_SEP}",
         "  EXIT LOGIC",
-        "  LONG exit  : Price extends above upper band → re-touches band → CLOSE",
-        "  SHORT exit : Price extends below lower band → re-touches band → CLOSE",
-        "  Stop Loss  : Pullback/bounce touch candle extreme",
-        "  Fallback   : Fib 1.272 / 1.618 / Bollinger Band",
+        "  SL         : FIXED at entry — low (LONG) / high (SHORT) of pullback candle",
+        "  TP1 / TP2  : FIXED at entry — Fib 1.272 / 1.618 of swing range",
+        "  BB Touch   : DYNAMIC — evaluated every scan vs the LIVE upper / lower",
+        "               band. Price first extends beyond band, then closes on next",
+        "               touch. Exit level is whatever the band is at that moment.",
         f"  {_SEP}",
         "  BB Scanner  |  For informational use only",
     ])
