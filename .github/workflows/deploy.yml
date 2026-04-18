@@ -1,9 +1,7 @@
 name: "Alpha X Bot Runner"
 
 on:
-  schedule:
-    - cron: '*/30 * * * *' # Run every 30 minutes
-  workflow_dispatch: # Allows manual trigger
+  workflow_dispatch: # Allows manual trigger only
 
 jobs:
   run-bot:
