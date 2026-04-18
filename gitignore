@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Runtime state (don't reset balance on redeploy)
+# paper_trades.json   ← comment this out if you WANT trades to persist via git
+
+# Charts
+charts/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Qwen output
+qwen_analysis.json
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db

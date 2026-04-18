@@ -3,7 +3,8 @@
 ║   BB SCANNER  –  INSTITUTIONAL GRADE                             ║
 ║   Binance Perpetual Futures  |  1m  |  BB(200, SD 1)             ║
 ║   Paper Trading: 30x Leverage  |  Discord Webhook Alerts         ║
-║   Runs on:  Windows / Linux / macOS / Termux (Android)           ║
+║   Qwen AI Agent: Auto-analysis every 4h                          ║
+║   Runs on:  Railway / Windows / Linux / macOS / Termux           ║
 ╚═══════════════════════════════════════════════════════════════════╝
 """
 
@@ -43,7 +44,8 @@ except Exception as _e:
 # ═══════════════════════════════════════════════════════════════════
 #  ①   USER CONFIG
 # ═══════════════════════════════════════════════════════════════════
-DISCORD_WEBHOOK  = (
+DISCORD_WEBHOOK  = os.environ.get(
+    "DISCORD_WEBHOOK",
     "https://discord.com/api/webhooks/1494071862609575948/"
     "G04AVF9M0nCp0FYPNDgBwyPzUee-9IMQFxr88uH88euQmaD4JM4LbV1cTofMqGqiz3fX"
 )
@@ -83,6 +85,7 @@ RISK_PCT         = 0.02
 MAX_MARGIN_PCT   = 0.25
 SIGNAL_COOLDOWN  = 300
 SUMMARY_EVERY    = 3600
+QWEN_EVERY       = 4 * 3600   # Qwen analysis interval (4 hours)
 
 MAX_OPEN_TRADES  = 5
 
@@ -98,12 +101,10 @@ if not os.path.exists(CHARTS_DIR):
         CHARTS_DIR = _SCRIPT_DIR
 
 # ═══════════════════════════════════════════════════════════════════
-#  ②  EXCHANGE  —  FIX: multi-endpoint fallback for geo-restrictions
+#  ②  EXCHANGE  —  multi-endpoint fallback for geo-restrictions
 # ═══════════════════════════════════════════════════════════════════
 FAPI_BASE = os.environ.get("BINANCE_PROXY_URL", "https://fapi.binance.com")
 
-# Ordered list of fallback base URLs. get_symbols() tries each in sequence.
-# On success it locks FAPI_BASE to the working URL for the whole session.
 _FAPI_FALLBACKS_RAW = [
     os.environ.get("BINANCE_PROXY_URL", ""),
     "https://fapi.binance.com",
@@ -162,14 +163,9 @@ def cache_signal(sym: str, sig: dict, current_price: float):
     }
 
 # ═══════════════════════════════════════════════════════════════════
-#  ④  DATA  —  FIX: get_symbols tries all fallback endpoints
+#  ④  DATA  —  get_symbols tries all fallback endpoints
 # ═══════════════════════════════════════════════════════════════════
 def get_symbols() -> list:
-    """
-    FIX: Try every URL in _FAPI_FALLBACKS sequentially.
-    HTTP 451 = geo-block, skip immediately without sleeping.
-    On first successful response, locks FAPI_BASE for the session.
-    """
     global FAPI_BASE
     for base in _FAPI_FALLBACKS:
         try:
@@ -194,7 +190,7 @@ def get_symbols() -> list:
             print(f"  ! {base} returned 0 symbols. Trying next...")
         except requests.exceptions.HTTPError as ex:
             print(f"  ! {base} HTTP error ({ex}). Trying next...")
-        except requests.exceptions.ConnectionError as ex:
+        except requests.exceptions.ConnectionError:
             print(f"  ! {base} connection error. Trying next...")
         except requests.exceptions.Timeout:
             print(f"  ! {base} timed out. Trying next...")
@@ -214,7 +210,6 @@ _TF_MAP = {
 }
 
 def fetch_df(symbol: str):
-    """Uses module-level FAPI_BASE set by get_symbols()."""
     try:
         params = {
             "symbol":   _raw_symbol(symbol),
@@ -569,8 +564,6 @@ class PaperTrader:
             self._save()
 
     def _save(self):
-        # FIX: atomic write — write to .tmp then rename to prevent
-        # a truncated JSON file if the process crashes mid-write.
         tmp = TRADES_FILE + ".tmp"
         try:
             with open(tmp, "w") as f:
@@ -610,7 +603,6 @@ class PaperTrader:
             margin   = self.balance * MAX_MARGIN_PCT
             notional = margin * LEVERAGE
 
-        # FIX: never deploy more margin than the available balance
         if margin > self.balance:
             print(f"    [SKIP] {symbol}: margin ({margin:.2f}) > balance ({self.balance:.2f})")
             return None
@@ -1168,6 +1160,37 @@ def discord_summary(trader: PaperTrader):
     _post(payload)
 
 
+def discord_qwen_report(analysis: dict):
+    """Send Qwen analysis results to Discord."""
+    ts    = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
+    summ  = analysis.get("summary", "No summary.")
+    act   = analysis.get("action",  "No action.")
+    upd   = analysis.get("parameter_updates", {})
+    upd_str = "\n".join([f"  {k} → {v}" for k, v in upd.items()]) if upd else "  No changes applied."
+
+    body = "\n".join([
+        "  🤖 QWEN AI ANALYSIS REPORT",
+        f"  {ts}",
+        f"  {_SEP}",
+        "  SUMMARY",
+        f"  {summ[:400]}",
+        f"  {_SEP}",
+        "  RECOMMENDED ACTION",
+        f"  {act[:300]}",
+        f"  {_SEP}",
+        "  PARAMETER UPDATES APPLIED",
+        upd_str,
+        f"  {_SEP}",
+        "  BB Scanner  |  Qwen AI Agent",
+    ])
+
+    payload = {
+        "content": "**BB SCANNER  |  🤖 QWEN AI ANALYSIS  |  4-HOUR REPORT**",
+        "embeds":  [{"color": 0x9333ea, "description": f"```\n{body}\n```"}],
+    }
+    _post(payload)
+
+
 def discord_startup(n_symbols: int, balance: float):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
 
@@ -1182,6 +1205,7 @@ def discord_startup(n_symbols: int, balance: float):
         f"  {_kv('Scan interval',  f'Every {SCAN_INTERVAL // 60} min  ({SCAN_INTERVAL}s)')}",
         f"  {_kv('Leverage',       f'{LEVERAGE}x paper trading')}",
         f"  {_kv('Start balance',  f'$ {balance:>12,.2f}')}",
+        f"  {_kv('Qwen Agent',     'Every 4h  (auto trade analysis)')}",
         f"  {_SEP}",
         "  SIGNAL CONDITIONS",
         "  LONG  : Upper Band Breakout Pullback",
@@ -1199,7 +1223,26 @@ def discord_startup(n_symbols: int, balance: float):
     _post(payload)
 
 # ═══════════════════════════════════════════════════════════════════
-#  ⑩  SCAN LOOP
+#  ⑩  QWEN AGENT RUNNER (called from main loop every 4h)
+# ═══════════════════════════════════════════════════════════════════
+def run_qwen_agent():
+    """Import and run Qwen analysis. Sends result to Discord."""
+    try:
+        print("\n  🤖 Running Qwen AI analysis...")
+        from qwen_agent import analyze_and_fix
+        analysis = analyze_and_fix()
+        if analysis:
+            discord_qwen_report(analysis)
+            print("  ✅ Qwen analysis complete and sent to Discord.")
+        else:
+            print("  ℹ️  Qwen agent: nothing to report this cycle.")
+    except ImportError:
+        print("  [WARN] qwen_agent.py not found. Skipping Qwen analysis.")
+    except Exception as ex:
+        print(f"  ! Qwen analysis failed: {ex.__class__.__name__}: {ex}")
+
+# ═══════════════════════════════════════════════════════════════════
+#  ⑪  SCAN LOOP
 # ═══════════════════════════════════════════════════════════════════
 def scan(symbols: list, trader: PaperTrader) -> int:
     found  = 0
@@ -1249,7 +1292,10 @@ def scan(symbols: list, trader: PaperTrader) -> int:
                             chart_size_kb = len(chart)/1024
                             print(f"  [DEBUG] Chart generated: {chart_size_kb:.1f} KB")
                             try:
-                                chart_file = os.path.join(CHARTS_DIR, f"chart_{sym.replace('/', '_')}_{int(time.time())}.png")
+                                chart_file = os.path.join(
+                                    CHARTS_DIR,
+                                    f"chart_{sym.replace('/', '_')}_{int(time.time())}.png"
+                                )
                                 with open(chart_file, "wb") as f:
                                     f.write(chart)
                                 print(f"  [DEBUG] Chart saved: {chart_file}")
@@ -1302,13 +1348,14 @@ def scan(symbols: list, trader: PaperTrader) -> int:
     return found
 
 # ═══════════════════════════════════════════════════════════════════
-#  ⑪  MAIN
+#  ⑫  MAIN
 # ═══════════════════════════════════════════════════════════════════
 def main():
     print()
     print("╔═══════════════════════════════════════════════════════════════╗")
     print("║   BB SCANNER  –  INSTITUTIONAL GRADE                         ║")
     print("║   Binance Perpetual  ·  1m  ·  BB(200,1)  ·  30x Paper       ║")
+    print("║   Qwen AI Agent: every 4h                                    ║")
     print("╚═══════════════════════════════════════════════════════════════╝")
     print(f"  Platform : {sys.platform}    Python : {sys.version.split()[0]}")
     print(f"  Charts   : {'ON (matplotlib)' if HAS_CHART else 'OFF (text-only Discord alerts)'}")
@@ -1319,7 +1366,6 @@ def main():
     print(f"  Paper Portfolio  →  Balance: ${s['balance']:,.2f}  "
           f"·  Open: {s['open']}  ·  Closed: {s['closed']}")
 
-    # FIX: multi-endpoint fallback + bounded exponential backoff
     symbols = []
     backoff = 5
     while not symbols:
@@ -1343,6 +1389,9 @@ def main():
 
     scan_no      = 0
     last_summary = time.time()
+    # Offset Qwen so it doesn't fire on the very first scan,
+    # but does fire after the first 4 hours of operation.
+    last_qwen    = time.time()
     max_loops    = int(os.environ.get("MAX_LOOPS", "0"))
 
     while True:
@@ -1369,12 +1418,18 @@ def main():
         except Exception as ex:
             print(f"\n  ❌ Scan error ({ex.__class__.__name__}): {ex}")
 
+        # Hourly portfolio summary
         if time.time() - last_summary >= SUMMARY_EVERY:
             try:
                 discord_summary(trader)
             except Exception as ex:
                 print(f"  ! Summary send failed: {ex}")
             last_summary = time.time()
+
+        # Qwen AI analysis every 4 hours
+        if time.time() - last_qwen >= QWEN_EVERY:
+            run_qwen_agent()
+            last_qwen = time.time()
 
         mins = SCAN_INTERVAL // 60
         print(f"\n  Waiting {mins} min ({SCAN_INTERVAL}s)  ·  Ctrl+C to stop")
@@ -1391,7 +1446,7 @@ def main():
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  ⑫  ENTRYPOINT
+#  ⑬  ENTRYPOINT
 # ═══════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     IS_CI     = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
@@ -1408,28 +1463,25 @@ if __name__ == "__main__":
 
         @app.route("/status")
         def status():
+            trader_tmp = PaperTrader()
+            s = trader_tmp.stats()
             return jsonify({
-                "scanner": "active",
-                "flask":   "running",
-                "port":    os.environ.get("PORT", 8000),
+                "scanner":  "active",
+                "flask":    "running",
+                "port":     os.environ.get("PORT", 8000),
+                "balance":  s["balance"],
+                "return":   s["ret_pct"],
+                "open":     s["open"],
+                "closed":   s["closed"],
             })
 
-        scanner_thread = threading.Thread(
-            target=lambda: (
-                setattr(sys.modules[__name__], '_scanner_running', True),
-                [main() for _ in iter(
-                    lambda: getattr(sys.modules[__name__], '_scanner_running', True),
-                    False
-                )]
-            ),
-            daemon=True,
-        )
+        scanner_thread = threading.Thread(target=main, daemon=True)
         scanner_thread.start()
         print("  🚀 Scanner started in background thread")
         print(f"  🌐 Flask server starting on port {os.environ.get('PORT', 8000)}")
 
         import logging
-        logging.getLogger('werkzeug').setLevel(logging.ERROR)
+        logging.getLogger("werkzeug").setLevel(logging.ERROR)
         app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), threaded=True)
 
     else:

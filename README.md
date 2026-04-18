@@ -12,6 +12,8 @@ The system operates on a breakout-pullback methodology utilizing Bollinger Band 
 
 This design deliberately filters the 450+ symbol universe down to a small set of high-conviction setups — typically 5–15 per scan — where 1m price structure, hourly momentum, and 4h trend direction are all aligned simultaneously.
 
+A **Qwen AI Agent** runs every 4 hours in the background, analyzing recent trade performance and market conditions, then autonomously applying conservative parameter adjustments to improve signal quality over time.
+
 ---
 
 ### Signal Generation Framework
@@ -104,6 +106,57 @@ A signal is rejected regardless of RSI or stage classification if the signal can
 
 ---
 
+### Qwen AI Agent
+
+The Qwen agent (`qwen_agent.py`) runs automatically every 4 hours inside the main process. It requires no separate process, cron job, or scheduler.
+
+#### What It Does
+
+Every 4 hours the agent:
+
+1. Reads `paper_trades.json` and isolates trades closed in the last 4 hours
+2. Fetches Binance 24h ticker to identify top 5 gainers and top 5 losers
+3. Sends both datasets to the **Qwen-Max** language model with a structured prompt
+4. Receives a JSON response containing: summary of what went wrong, recommended action, and specific parameter updates
+5. Safely applies parameter updates to `main.py` using regex patching
+6. Posts a purple 🤖 analysis embed to Discord
+
+#### Safety Constraints
+
+The agent can only modify a fixed allowlist of parameters. It cannot touch leverage, risk percentage, balance, or execution logic:
+
+```
+TOUCH_TOL          MIN_BREAKOUT_PCT     MIN_BANDWIDTH_PCT
+RSI_LONG_1H        RSI_LONG_4H          RSI_SHORT_1H
+RSI_SHORT_4H       RSI_VELOCITY_MIN     VOLUME_SURGE_MULT
+BREAKOUT_LOOKBACK  ENTRY_WINDOW
+```
+
+Changes are capped conservatively. If the Qwen API key is not configured, the agent still runs and posts a placeholder report to Discord — it does not crash or block the scanner.
+
+#### Discord Output
+
+```
+🤖 QWEN AI ANALYSIS REPORT
+2026-04-18  04:00:00 UTC
+────────────────────────────────────────────
+SUMMARY
+  2 losses in the last 4h were caused by tight stop
+  placement on low-liquidity assets. Bot missed SUIUSDT
+  (+18%) because 1h RSI was 57, just below the 60 threshold.
+────────────────────────────────────────────
+RECOMMENDED ACTION
+  Relaxing RSI_LONG_1H from 60 to 58 and increasing
+  TOUCH_TOL from 0.0025 to 0.003 to capture wider pullbacks.
+────────────────────────────────────────────
+PARAMETER UPDATES APPLIED
+  RSI_LONG_1H  → 58
+  TOUCH_TOL    → 0.003
+────────────────────────────────────────────
+```
+
+---
+
 ### Position & Risk Management
 
 #### Position Sizing
@@ -167,6 +220,7 @@ Both TP levels are fixed at entry and do not adjust dynamically.
 | Trend Stage Boundary LATE | 4h RSI 80 |
 | Volume Surge Minimum | 1.5× 20-candle average |
 | Scan Interval | 300 seconds (5 minutes) |
+| Qwen Agent Interval | 14400 seconds (4 hours) |
 | Leverage | 30× |
 | Risk Per Trade | 2% of equity |
 | Max Margin Per Trade | 25% of equity |
@@ -218,95 +272,100 @@ Position Monitoring (every 5-min scan)
   [extended flag tracks post-entry band extension]
   [Band-Touch Exit → SL → TP priority]
     │
-    ▼
-Discord Alert Dispatch
-  [Signal card + chart image + trend intelligence block]
+    ├──────────────────────────────────┐
+    ▼                                  ▼  (every 4 hours)
+Discord Alert Dispatch            Qwen AI Agent
+  [Signal card]                     [Analyze losses + movers]
+  [Chart image]                     [Patch main.py params]
+  [Trend intelligence block]        [Post analysis to Discord]
 ```
 
-#### Execution Logic Flow
+---
+
+### Infrastructure & Deployment
+
+#### Production Environment
+
+- **Hosting Platform:** Railway (continuous operation, auto-restart on fault)
+- **Runtime:** Python 3.10+, persistent process with internal watchdog
+- **Data Source:** Binance USDT-Margined Perpetuals — `fapi.binance.com` (direct REST, no ccxt dependency)
+- **Notification System:** Discord Webhook — structured embeds with chart images
+- **State Persistence:** `paper_trades.json` — survives restarts, maintains full trade history
+- **AI Agent:** Qwen-Max via DashScope API — runs in-process every 4 hours
+
+#### Geo-Block Handling
+
+Binance blocks connections from certain cloud provider IP ranges (HTTP 451). The scanner automatically tries a sequence of fallback base URLs and locks onto the first one that responds:
 
 ```
-+-------------------------------------------------------------------------+
-|                      SCAN CYCLE  (every 5 minutes)                       |
-|                      450+ Binance USDT Perpetuals                         |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-|            ANTI-SIDEWAYS PRE-FILTER                                      |
-|   Bandwidth ≥ 0.8%  ·  Not in middle-band dead zone                     |
-+-------------------------------------------------------------------------+
-                                    |
-                    +---------------+---------------+
-                    |                               |
-                    v                               v
-        +---------------------+         +---------------------+
-        |   LONG SETUP        |         |   SHORT SETUP       |
-        |                     |         |                     |
-        | 1. Breakout > UBB   |         | 1. Breakdown < LBB  |
-        |    (30c lookback)   |         |    (30c lookback)   |
-        | 2. Pullback touch   |         | 2. Bounce touch     |
-        |    (within 10c)     |         |    (within 10c)     |
-        | 3. Confirmation up  |         | 3. Confirmation dn  |
-        | 4. Above midband    |         | 4. Below midband    |
-        +---------------------+         +---------------------+
-                    |                               |
-                    v                               v
-        +---------------------+         +---------------------+
-        |  MTF RSI FILTER     |         |  MTF RSI FILTER     |
-        |  1h RSI ≥ 60        |         |  1h RSI ≤ 40        |
-        |  4h RSI ≥ 55        |         |  4h RSI ≤ 45        |
-        +---------------------+         +---------------------+
-                    |                               |
-                    v                               v
-        +---------------------+         +---------------------+
-        |  TREND INTELLIGENCE |         |  TREND INTELLIGENCE |
-        |  Stage: EARLY/MID   |         |  Stage: EARLY/MID   |
-        |  RSI Velocity ≥ 4   |         |  RSI Velocity ≤ -4  |
-        |  Volume ≥ 1.5× avg  |         |  Volume ≥ 1.5× avg  |
-        |  Score: 0–100       |         |  Score: 0–100       |
-        +---------------------+         +---------------------+
-                    |                               |
-                    v                               v
-        +---------------------+         +---------------------+
-        |  EXECUTE BUY        |         |  EXECUTE SELL       |
-        |                     |         |                     |
-        |  SL: touch low      |         |  SL: touch high     |
-        |  TP1: Fib 1.272     |         |  TP1: Fib 1.272     |
-        |  TP2: Fib 1.618     |         |  TP2: Fib 1.618     |
-        |  extended = False   |         |  extended = False   |
-        +---------------------+         +---------------------+
-                    |                               |
-                    v                               v
-        +-----------------------------------------------------+
-        |              POSITION MONITORING                     |
-        |                                                      |
-        |  Phase 1:  if high > upper BB  → extended = True    |
-        |            (gated: only candles after entry time)   |
-        |                                                      |
-        |  Phase 2:  if extended AND touch BB → EXIT          |
-        |            (close within tol of band, not a crash)  |
-        |                                                      |
-        |  Fallback: px ≤ SL → Stop Loss                      |
-        |  Target:   px ≥ TP1 / TP2 → Take Profit            |
-        +-----------------------------------------------------+
-                                    |
-                    +---------------+---------------+
-                    |                               |
-                    v                               v
-        +---------------------+         +---------------------+
-        |  Discord Alert      |         |  paper_trades.json  |
-        |  Signal card        |         |  Persistent state   |
-        |  Chart image        |         |  Balance tracking   |
-        |  Trend intel block  |         |  Win/loss record    |
-        +---------------------+         +---------------------+
+fapi.binance.com  →  api1.binance.com  →  api2.binance.com
+api3.binance.com  →  data.binance.com
+```
+
+If all endpoints are blocked, set `BINANCE_PROXY_URL` to a working proxy in Railway's environment variables.
+
+---
+
+### Railway Deployment
+
+#### One-Time Setup
+
+```
+1. Push all files to a GitHub repository
+2. Railway → New Project → Deploy from GitHub repo
+3. Railway detects Procfile and runs:  python main.py
+```
+
+#### Environment Variables (Railway → Variables tab)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DISCORD_WEBHOOK` | ✅ Yes | Your Discord webhook URL |
+| `QWEN_API_KEY` | ⚡ Optional | DashScope API key for Qwen AI analysis |
+| `BINANCE_PROXY_URL` | ⚡ Optional | Override Binance endpoint if geo-blocked |
+
+> **Important:** Never put secrets directly in `main.py` or commit them to GitHub. Use Railway's Variables tab exclusively.
+
+#### Process Architecture on Railway
+
+```
+Railway Container
+│
+├── Flask web server (port $PORT)   ← Railway health checks hit this
+│     GET /          → {"status": "running"}
+│     GET /health    → {"status": "healthy"}
+│     GET /status    → balance, return, open/closed counts
+│
+└── Scanner thread (daemon)
+      ├── Every 5 min  → full market scan + signal detection
+      ├── Every 1 hour → Discord portfolio summary
+      └── Every 4 hours → Qwen AI analysis + Discord report
+```
+
+#### Local / Termux Run (no Railway)
+
+```bash
+# Install
+pip install pandas numpy requests matplotlib flask openai
+
+# Run
+python main.py
+```
+
+```bash
+# Termux (Android, 24/7 mobile)
+pkg install python tmux -y
+pip install pandas numpy requests openai
+tmux new -s scanner
+python main.py
+# Detach: Ctrl+B then D
 ```
 
 ---
 
 ### Discord Alert Format
 
-Each signal dispatch contains a structured trade card with the following intelligence block:
+#### Signal Card
 
 ```
 LONG   XYZ / USDT
@@ -327,39 +386,14 @@ Volume Surge     : 1.8x avg ✅
 ────────────────────────────────────────────
 ```
 
----
+#### Alert Types
 
-### Infrastructure & Deployment
-
-#### Production Environment
-
-- **Hosting Platform:** Railway (continuous operation, auto-restart on fault)
-- **Runtime:** Python 3.10+, persistent process with internal watchdog
-- **Data Source:** Binance USDT-Margined Perpetuals — `fapi.binance.com` (direct REST, no ccxt dependency)
-- **Notification System:** Discord Webhook — structured embeds with chart images
-- **State Persistence:** `paper_trades.json` — survives restarts, maintains full trade history
-
-#### System Requirements
-
-```bash
-# Install dependencies
-pip install pandas numpy requests matplotlib
-
-# Run
-python main.py
-```
-
-Matplotlib is optional. If unavailable (e.g. Termux/Android), Discord alerts are sent as text-only cards without chart images. All other functionality is unaffected.
-
-#### Termux / Android (24/7 mobile deployment)
-
-```bash
-pkg install python tmux -y
-pip install pandas numpy requests
-tmux new -s scanner
-python main.py
-# Detach: Ctrl+B then D
-```
+| Alert | Trigger | Color |
+|-------|---------|-------|
+| 🟢 NEW SIGNAL | Entry confirmed | Green / Red |
+| ⚪ TRADE CLOSED | SL / TP / Band exit | Green / Red |
+| 🔵 HOURLY SUMMARY | Every 60 minutes | Blue |
+| 🟣 QWEN ANALYSIS | Every 4 hours | Purple |
 
 ---
 
@@ -373,6 +407,7 @@ All strategy parameters are consolidated in the `USER CONFIG` block at the top o
 | `BB_SD` | 1 | Standard deviation multiplier |
 | `TIMEFRAME` | `"1m"` | Candle resolution |
 | `SCAN_INTERVAL` | 300 | Seconds between full market scans |
+| `QWEN_EVERY` | 14400 | Seconds between Qwen AI analysis runs (4h) |
 | `BREAKOUT_LOOKBACK` | 30 | Candles back to detect the spike event |
 | `ENTRY_WINDOW` | 10 | Max candles from spike to entry confirmation |
 | `TOUCH_TOL` | 0.0025 | Band touch tolerance (0.25%) |
@@ -393,7 +428,30 @@ All strategy parameters are consolidated in the `USER CONFIG` block at the top o
 | `MAX_MARGIN_PCT` | 0.25 | Max margin per trade (25% of equity) |
 | `MAX_OPEN_TRADES` | 5 | Maximum concurrent open positions |
 | `SIGNAL_COOLDOWN` | 300 | Cooldown per symbol in seconds |
+| `SUMMARY_EVERY` | 3600 | Hourly Discord summary interval (seconds) |
 | `INITIAL_BALANCE` | 10,000 | Starting paper balance (USDT) |
+
+---
+
+### File Structure
+
+```
+azalyst-alpha-x/
+│
+├── main.py              # Scanner + paper trader + Discord alerts
+├── qwen_agent.py        # Qwen AI analysis agent (called by main.py)
+│
+├── requirements.txt     # Python dependencies
+├── Procfile             # Railway start command
+├── railway.toml         # Railway build + restart config
+│
+├── .env.example         # Environment variable template (safe to commit)
+├── .gitignore           # Excludes .env, charts/, __pycache__, etc.
+│
+├── paper_trades.json    # Live trade state (auto-created on first run)
+├── qwen_analysis.json   # Latest Qwen report (auto-created)
+└── charts/              # Saved chart PNGs (auto-created)
+```
 
 ---
 
@@ -401,13 +459,15 @@ All strategy parameters are consolidated in the `USER CONFIG` block at the top o
 
 This platform is designed for quantitative research and educational purposes. Historical performance does not guarantee future results. Cryptocurrency markets exhibit extreme volatility and leverage amplifies both gains and losses. The strategies implemented herein have not been registered with any regulatory authority and do not constitute investment advice, solicitation, or recommendation.
 
+The Qwen AI Agent modifies strategy parameters autonomously. All parameter changes are conservative and bounded by a hard allowlist, but automated parameter tuning carries inherent risk. Users should monitor the system and review Qwen analysis reports regularly.
+
 Users should conduct independent due diligence and consult qualified financial professionals before deploying capital based on signals generated by this system.
 
 ---
 
 ### Development Status
 
-**Current Version:** 3.0.0
+**Current Version:** 4.0.0
 **Last Updated:** April 2026
 **License:** Proprietary — All Rights Reserved
 
