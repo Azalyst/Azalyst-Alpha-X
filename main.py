@@ -5,101 +5,21 @@
 ║   Paper Trading: 30x Leverage  |  Discord Webhook Alerts         ║
 ║   Runs on:  Windows / Linux / macOS / Termux (Android)           ║
 ╚═══════════════════════════════════════════════════════════════════╝
-
-STRATEGY
-────────
-LONG  – Upper Band Breakout Pullback:
-          1. Price closes ABOVE upper BB (breakout)
-          2. Price pulls back to TOUCH the upper BB
-          3. Price starts going UP again → BUY
-          SL: Low of the pullback touch candle
-
-SHORT – Lower Band Breakdown Pullback:
-          1. Price closes BELOW lower BB (breakdown)
-          2. Price bounces back to TOUCH the lower BB
-          3. Price starts going DOWN again → SELL
-          SL: High of the bounce touch candle
-
-No trades in the middle band zone.
-
-EXIT (per-trade `extended` flag — survives across any number of scan cycles)
-────
-LONG  exit → price first extends ABOVE upper band, then re-touches upper band → CLOSE
-             (Upper Band Recross is EXIT only — never opens a new SHORT)
-SHORT exit → price first extends BELOW lower band, then re-touches lower band → CLOSE
-             (Lower Band Recross is EXIT only — never opens a new LONG)
-Fallback   → Upper / Lower Bollinger Band — DYNAMIC (live band each scan,
-             NOT frozen at entry). Exit fires wherever the band is at the
-             moment of the touch.
-Stop Loss  → Low (Long) or High (Short) of pullback/bounce touch candle
-
-═══════════════════════════════════════════════════════════════════
- INSTALL  –  PC (Windows / Linux / macOS)
-═══════════════════════════════════════════════════════════════════
-   pip install pandas numpy requests matplotlib
-   python main.py
-
-═══════════════════════════════════════════════════════════════════
- INSTALL  –  TERMUX (Android, runs 24/7 on phone)
-═══════════════════════════════════════════════════════════════════
- 1. Install Termux from F-Droid  (the Play Store one is broken).
- 2. Install Termux:API and Termux:Boot from F-Droid (optional but
-    Termux:Boot lets the scanner auto-start when phone reboots).
- 3. In Termux:
-
-      pkg update && pkg upgrade -y
-      pkg install python git -y
-      pip install --upgrade pip
-      pip install pandas numpy requests
-      # matplotlib is OPTIONAL on Termux. Charts auto-disable if
-      # not installed – Discord alerts still fire as text only.
-
- 4. Put main.py somewhere persistent, e.g. ~/scanner/
-      mkdir -p ~/scanner && cd ~/scanner
-      # copy main.py here (via Termux storage / scp / etc.)
-
- 5. Keep the CPU awake so Android does not freeze the process:
-      pkg install termux-api -y
-      termux-wake-lock          # release with: termux-wake-unlock
-
- 6. Run:
-      python main.py
-
- 7. Want it to survive Termux being closed? Run inside tmux:
-      pkg install tmux -y
-      tmux new -s scanner
-      python main.py
-      # detach: Ctrl+B then D     reattach: tmux attach -t scanner
-
- 8. Auto-start on boot (Termux:Boot installed):
-      mkdir -p ~/.termux/boot
-      cat > ~/.termux/boot/start-scanner <<'EOF'
-      #!/data/data/com.termux/files/usr/bin/sh
-      termux-wake-lock
-      cd ~/scanner
-      python main.py >> scanner.log 2>&1
-      EOF
-      chmod +x ~/.termux/boot/start-scanner
 """
 
-# ─── STDLIB ──────────────────────────────────────────────────────────────────
 import io, json, os, sys, time, threading
 from datetime import datetime, timezone
 
-# Force UTF-8 stdout so emojis / box chars render cleanly on
-# Windows cmd, Termux, and SSH sessions.
 try:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
-# ─── THIRD-PARTY (required) ──────────────────────────────────────────────────
 import numpy  as np
 import pandas as pd
 import requests
 
-# ─── FLASK for Render Web Environment ────────────────────────────────────────
 try:
     from flask import Flask, jsonify
     app = Flask(__name__)
@@ -109,7 +29,6 @@ except ImportError:
     app = None
     print("  [INFO] Flask not installed. Running in standalone mode only.")
 
-# ─── matplotlib is OPTIONAL (skip on Termux if it won't install) ─
 try:
     import matplotlib
     matplotlib.use("Agg")
@@ -122,55 +41,49 @@ except Exception as _e:
           f"Discord alerts will be sent without chart images.")
 
 # ═══════════════════════════════════════════════════════════════════
-#  ①   USER CONFIG  ←  only section you need to edit
+#  ①   USER CONFIG
 # ═══════════════════════════════════════════════════════════════════
 DISCORD_WEBHOOK  = (
     "https://discord.com/api/webhooks/1494071862609575948/"
     "G04AVF9M0nCp0FYPNDgBwyPzUee-9IMQFxr88uH88euQmaD4JM4LbV1cTofMqGqiz3fX"
 )
 
-BB_PERIOD        = 200          # Bollinger Band period
-BB_SD            = 1            # Standard deviation multiplier
+BB_PERIOD        = 200
+BB_SD            = 1
 TIMEFRAME        = "1m"
-CANDLE_LIMIT     = 320          # must be > BB_PERIOD + 50
-SCAN_INTERVAL    = 300          # seconds between full scans (300 = 5 min)
-LOOKBACK_WINDOW  = 300          # look back 5 min (300s) to check if conditions matched
-REQUEST_DELAY    = 0.15         # seconds between API calls (rate-limit safe)
-SWING_LOOKBACK   = 60           # candles back to find swing high / low
-TOUCH_TOL        = 0.0025       # 0.25 % – band "touch" tolerance
+CANDLE_LIMIT     = 320
+SCAN_INTERVAL    = 300
+LOOKBACK_WINDOW  = 300
+REQUEST_DELAY    = 0.15
+SWING_LOOKBACK   = 60
+TOUCH_TOL        = 0.0025
 
-# ── Spike Detection Window ────────────────────────────────────────────────────
-BREAKOUT_LOOKBACK = 30          # scan 30 candles back for the spike
-ENTRY_WINDOW      = 10          # band touch + confirmation ≤ 10 candles after spike
+BREAKOUT_LOOKBACK = 30
+ENTRY_WINDOW      = 10
 
-# Anti-sideways filters
-MIN_BREAKOUT_PCT = 0.002        # breakout candle must close at least 0.2% beyond the band
-MIN_BANDWIDTH_PCT = 0.008       # ignore setups when BB width < 0.8% of price
+MIN_BREAKOUT_PCT  = 0.002
+MIN_BANDWIDTH_PCT = 0.008
 
-# ── Multi-Timeframe RSI Filter ────────────────────────────────────────────────
-RSI_PERIOD       = 14           # standard Wilder 14-period RSI
-RSI_LONG_1H      = 60           # 1h RSI must be ≥ this for LONG  (bullish momentum)
-RSI_LONG_4H      = 55           # 4h RSI must be ≥ this for LONG  (confirmed uptrend)
-RSI_SHORT_1H     = 40           # 1h RSI must be ≤ this for SHORT (bearish momentum)
-RSI_SHORT_4H     = 45           # 4h RSI must be ≤ this for SHORT (confirmed downtrend)
+RSI_PERIOD       = 14
+RSI_LONG_1H      = 60
+RSI_LONG_4H      = 55
+RSI_SHORT_1H     = 40
+RSI_SHORT_4H     = 45
 
-# ── Trend Stage Detection ─────────────────────────────────────────────────────
-TREND_STAGE_MID_4H   = 68       # 4h RSI above this → MID stage
-TREND_STAGE_LATE_4H  = 80       # 4h RSI above this → LATE (skip by default)
-SKIP_LATE_STAGE      = True     # set False to trade LATE-stage signals anyway
-VOLUME_SURGE_MULT    = 1.5      # signal candle volume ≥ 1.5× 20-candle avg
-VOLUME_LOOKBACK      = 20       # candles for volume average
-RSI_VELOCITY_MIN     = 4.0      # 4h RSI must have risen ≥ 4 pts in last 3 candles
+TREND_STAGE_MID_4H   = 68
+TREND_STAGE_LATE_4H  = 80
+SKIP_LATE_STAGE      = True
+VOLUME_SURGE_MULT    = 1.5
+VOLUME_LOOKBACK      = 20
+RSI_VELOCITY_MIN     = 4.0
 
-# Paper trading
-INITIAL_BALANCE  = 10_000.0     # starting virtual USDT
-LEVERAGE         = 30           # leverage multiplier
-RISK_PCT         = 0.02         # 2 % account risk per trade
-MAX_MARGIN_PCT   = 0.25         # never use > 25 % of balance as margin per trade
-SIGNAL_COOLDOWN  = 300          # seconds before same symbol can fire again
-SUMMARY_EVERY    = 3600         # seconds between Discord portfolio summaries
+INITIAL_BALANCE  = 10_000.0
+LEVERAGE         = 30
+RISK_PCT         = 0.02
+MAX_MARGIN_PCT   = 0.25
+SIGNAL_COOLDOWN  = 300
+SUMMARY_EVERY    = 3600
 
-# Risk / position guards
 MAX_OPEN_TRADES  = 5
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -181,13 +94,30 @@ if not os.path.exists(CHARTS_DIR):
     try:
         os.makedirs(CHARTS_DIR, exist_ok=True)
     except Exception as e:
-        print(f"  [WARN] Could not create charts folder: {e}. Charts will save to script dir.")
+        print(f"  [WARN] Could not create charts folder: {e}.")
         CHARTS_DIR = _SCRIPT_DIR
 
 # ═══════════════════════════════════════════════════════════════════
-#  ②  EXCHANGE
+#  ②  EXCHANGE  —  FIX: multi-endpoint fallback for geo-restrictions
 # ═══════════════════════════════════════════════════════════════════
 FAPI_BASE = os.environ.get("BINANCE_PROXY_URL", "https://fapi.binance.com")
+
+# Ordered list of fallback base URLs. get_symbols() tries each in sequence.
+# On success it locks FAPI_BASE to the working URL for the whole session.
+_FAPI_FALLBACKS_RAW = [
+    os.environ.get("BINANCE_PROXY_URL", ""),
+    "https://fapi.binance.com",
+    "https://api1.binance.com",
+    "https://api2.binance.com",
+    "https://api3.binance.com",
+    "https://data.binance.com",
+]
+_seen_urls = set()
+_FAPI_FALLBACKS = []
+for _u in _FAPI_FALLBACKS_RAW:
+    if _u and _u not in _seen_urls:
+        _seen_urls.add(_u)
+        _FAPI_FALLBACKS.append(_u)
 
 _SESSION = requests.Session()
 _SESSION.headers.update({"Accept": "application/json"})
@@ -196,8 +126,8 @@ _SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})
 # ═══════════════════════════════════════════════════════════════════
 #  ③  SIGNAL COOLDOWN & VALIDATION
 # ═══════════════════════════════════════════════════════════════════
-_last_signal: dict[str, float] = {}
-_signal_cache: dict[str, dict] = {}
+_last_signal: dict = {}
+_signal_cache: dict = {}
 
 def on_cooldown(sym: str) -> bool:
     return (time.time() - _last_signal.get(sym, 0)) < SIGNAL_COOLDOWN
@@ -205,7 +135,7 @@ def on_cooldown(sym: str) -> bool:
 def mark_cooldown(sym: str):
     _last_signal[sym] = time.time()
 
-SIGNAL_FRESHNESS = 60
+SIGNAL_FRESHNESS    = 60
 SIGNAL_SLIPPAGE_PCT = 0.02
 
 def is_signal_valid(sym: str, current_price: float) -> bool:
@@ -219,9 +149,9 @@ def is_signal_valid(sym: str, current_price: float) -> bool:
     entry = cached["entry_price"]
     slippage = abs(current_price - entry) / entry
     if slippage > SIGNAL_SLIPPAGE_PCT:
-        print(f"    [REJECT] {sym}: Price slipped {slippage*100:.2f}% (> {SIGNAL_SLIPPAGE_PCT*100}%)")
+        print(f"    [REJECT] {sym}: Price slipped {slippage*100:.2f}%")
         return False
-    print(f"    [VALID] {sym}: Signal fresh ({age:.0f}s old), price slip {slippage*100:.2f}%")
+    print(f"    [VALID] {sym}: Signal fresh ({age:.0f}s old), slip {slippage*100:.2f}%")
     return True
 
 def cache_signal(sym: str, sig: dict, current_price: float):
@@ -232,20 +162,45 @@ def cache_signal(sym: str, sig: dict, current_price: float):
     }
 
 # ═══════════════════════════════════════════════════════════════════
-#  ④  DATA
+#  ④  DATA  —  FIX: get_symbols tries all fallback endpoints
 # ═══════════════════════════════════════════════════════════════════
-def get_symbols() -> list[str]:
-    url  = f"{FAPI_BASE}/fapi/v1/exchangeInfo"
-    resp = _SESSION.get(url, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    syms = []
-    for s in data["symbols"]:
-        if (s.get("quoteAsset") == "USDT"
-                and s.get("status")       == "TRADING"
-                and s.get("contractType") == "PERPETUAL"):
-            syms.append(s["baseAsset"] + "/USDT")
-    return sorted(set(syms))
+def get_symbols() -> list:
+    """
+    FIX: Try every URL in _FAPI_FALLBACKS sequentially.
+    HTTP 451 = geo-block, skip immediately without sleeping.
+    On first successful response, locks FAPI_BASE for the session.
+    """
+    global FAPI_BASE
+    for base in _FAPI_FALLBACKS:
+        try:
+            url  = f"{base}/fapi/v1/exchangeInfo"
+            print(f"  Trying {base} ...")
+            resp = _SESSION.get(url, timeout=15)
+            if resp.status_code == 451:
+                print(f"  ! {base} geo-blocked (HTTP 451). Trying next...")
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            syms = []
+            for s in data.get("symbols", []):
+                if (s.get("quoteAsset") == "USDT"
+                        and s.get("status")       == "TRADING"
+                        and s.get("contractType") == "PERPETUAL"):
+                    syms.append(s["baseAsset"] + "/USDT")
+            if syms:
+                FAPI_BASE = base
+                print(f"  [OK] Connected via {base}")
+                return sorted(set(syms))
+            print(f"  ! {base} returned 0 symbols. Trying next...")
+        except requests.exceptions.HTTPError as ex:
+            print(f"  ! {base} HTTP error ({ex}). Trying next...")
+        except requests.exceptions.ConnectionError as ex:
+            print(f"  ! {base} connection error. Trying next...")
+        except requests.exceptions.Timeout:
+            print(f"  ! {base} timed out. Trying next...")
+        except Exception as ex:
+            print(f"  ! {base} error ({ex.__class__.__name__}: {ex}). Trying next...")
+    return []
 
 
 def _raw_symbol(ccxt_sym: str) -> str:
@@ -258,7 +213,8 @@ _TF_MAP = {
     "12h": "12h", "1d": "1d", "3d": "3d", "1w": "1w", "1M": "1M",
 }
 
-def fetch_df(symbol: str) -> pd.DataFrame | None:
+def fetch_df(symbol: str):
+    """Uses module-level FAPI_BASE set by get_symbols()."""
     try:
         params = {
             "symbol":   _raw_symbol(symbol),
@@ -366,9 +322,9 @@ def score_trend(symbol: str, direction: str, df_1m: pd.DataFrame) -> dict:
         stage = "EARLY"
 
     if direction == "LONG":
-        rsi_pts  = min(30, int((r1h - 50) / 50 * 30) + int((r4h - 50) / 50 * 30)) // 2
+        rsi_pts = min(30, int((r1h - 50) / 50 * 30) + int((r4h - 50) / 50 * 30)) // 2
     else:
-        rsi_pts  = min(30, int((50 - r1h) / 50 * 30) + int((50 - r4h) / 50 * 30)) // 2
+        rsi_pts = min(30, int((50 - r1h) / 50 * 30) + int((50 - r4h) / 50 * 30)) // 2
     rsi_pts = max(0, rsi_pts)
 
     stage_pts = {"EARLY": 25, "MID": 15, "LATE": 0}[stage]
@@ -414,7 +370,7 @@ def score_trend(symbol: str, direction: str, df_1m: pd.DataFrame) -> dict:
     }
 
 
-def passes_rsi_filter(symbol: str, direction: str, df_1m: pd.DataFrame = None) -> tuple[bool, dict]:
+def passes_rsi_filter(symbol: str, direction: str, df_1m: pd.DataFrame = None) -> tuple:
     if df_1m is None:
         mtf = fetch_mtf_rsi(symbol)
         r1h, r4h = mtf["rsi_1h"], mtf["rsi_4h"]
@@ -441,7 +397,7 @@ def _build(direction, condition, entry, sl):
             "entry": round(float(entry), 8), "sl": round(float(sl), 8)}
 
 
-def long_band_touch(df) -> dict | None:
+def long_band_touch(df):
     n = len(df)
     if n < BB_PERIOD + BREAKOUT_LOOKBACK + 2:
         return None
@@ -500,7 +456,7 @@ def long_band_touch(df) -> dict | None:
     return None
 
 
-def short_band_touch(df) -> dict | None:
+def short_band_touch(df):
     n = len(df)
     if n < BB_PERIOD + BREAKOUT_LOOKBACK + 2:
         return None
@@ -613,13 +569,24 @@ class PaperTrader:
             self._save()
 
     def _save(self):
-        with open(TRADES_FILE, "w") as f:
-            json.dump({"balance": round(self.balance, 6),
-                       "open_trades":   self.open_trades,
-                       "closed_trades": self.closed_trades,
-                       "counter":       self.counter}, f, indent=2)
+        # FIX: atomic write — write to .tmp then rename to prevent
+        # a truncated JSON file if the process crashes mid-write.
+        tmp = TRADES_FILE + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump({"balance": round(self.balance, 6),
+                           "open_trades":   self.open_trades,
+                           "closed_trades": self.closed_trades,
+                           "counter":       self.counter}, f, indent=2)
+            os.replace(tmp, TRADES_FILE)
+        except Exception as ex:
+            print(f"  [WARN] Portfolio save failed: {ex}")
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
-    def open_trade(self, symbol: str, sig: dict, targets: dict) -> dict | None:
+    def open_trade(self, symbol: str, sig: dict, targets: dict):
         e  = sig["entry"]
         sl = sig["sl"]
         sl_pct = abs(e - sl) / e
@@ -627,8 +594,7 @@ class PaperTrader:
             return None
 
         if len(self.open_trades) >= MAX_OPEN_TRADES:
-            print(f"    [SKIP] {symbol}: max open trades reached "
-                  f"({len(self.open_trades)}/{MAX_OPEN_TRADES})")
+            print(f"    [SKIP] {symbol}: max open trades ({MAX_OPEN_TRADES})")
             return None
 
         existing_syms = {t["symbol"] for t in self.open_trades}
@@ -643,6 +609,11 @@ class PaperTrader:
         if margin > self.balance * MAX_MARGIN_PCT:
             margin   = self.balance * MAX_MARGIN_PCT
             notional = margin * LEVERAGE
+
+        # FIX: never deploy more margin than the available balance
+        if margin > self.balance:
+            print(f"    [SKIP] {symbol}: margin ({margin:.2f}) > balance ({self.balance:.2f})")
+            return None
 
         self.counter += 1
         trade = {
@@ -670,7 +641,7 @@ class PaperTrader:
         self._save()
         return trade
 
-    def update(self, prices: dict, df_dict: dict = None) -> list[dict]:
+    def update(self, prices: dict, df_dict: dict = None) -> list:
         still_open, closed = [], []
 
         for t in self.open_trades:
@@ -706,8 +677,7 @@ class PaperTrader:
                                 cur_is_new = prev_is_new = True
                             if (cur_is_new and cur["high"] > upper) or (prev_is_new and prev["high"] > upper):
                                 t["extended"] = True
-                                print(f"    [EXTEND] {t['id']} {t['symbol']} "
-                                      f"LONG extended above upper band")
+                                print(f"    [EXTEND] {t['id']} {t['symbol']} LONG extended above upper band")
 
                         elif t["extended"]:
                             touching = (
@@ -730,8 +700,7 @@ class PaperTrader:
                                 cur_is_new = prev_is_new = True
                             if (cur_is_new and cur["low"] < lower) or (prev_is_new and prev["low"] < lower):
                                 t["extended"] = True
-                                print(f"    [EXTEND] {t['id']} {t['symbol']} "
-                                      f"SHORT extended below lower band")
+                                print(f"    [EXTEND] {t['id']} {t['symbol']} SHORT extended below lower band")
 
                         elif t["extended"]:
                             touching = (
@@ -750,12 +719,12 @@ class PaperTrader:
                     cp, cr = t["sl"], "SL ❌ Stop Loss"
             if cp is None:
                 if d == "LONG":
-                    if   t["tp2"] and px >= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
-                    elif t["tp1"] and px >= t["tp1"]:             cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
+                    if   t["tp2"] and px >= t["tp2"]: cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
+                    elif t["tp1"] and px >= t["tp1"]: cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
                     else: t["upnl"] = round((px - t["entry"]) / t["entry"] * t["notional"], 4)
                 else:
-                    if   t["tp2"] and px <= t["tp2"]:             cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
-                    elif t["tp1"] and px <= t["tp1"]:             cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
+                    if   t["tp2"] and px <= t["tp2"]: cp, cr = t["tp2"], "TP2 ✅ Fib 1.618"
+                    elif t["tp1"] and px <= t["tp1"]: cp, cr = t["tp1"], "TP1 ✅ Fib 1.272"
                     else: t["upnl"] = round((t["entry"] - px) / t["entry"] * t["notional"], 4)
 
             if cp is not None:
@@ -805,7 +774,7 @@ GRID    = "#1c2333"
 FG      = "#8b949e"
 WHITE   = "#e6edf3"
 
-def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | None:
+def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str):
     if not HAS_CHART:
         return None
     plot = df.tail(120).copy().reset_index(drop=True)
@@ -829,7 +798,7 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str) -> bytes | N
 
     ax.fill_between(xs, plot["upper"], plot["lower"],
                     color=BB_CLR, alpha=0.06, zorder=1)
-    ax.plot(xs, plot["upper"], color=BB_CLR, lw=1.3, label=f"Upper BB", zorder=2)
+    ax.plot(xs, plot["upper"], color=BB_CLR, lw=1.3, label="Upper BB", zorder=2)
     ax.plot(xs, plot["mid"],   color=MID_CLR, lw=1.3, label="SMA 200",   zorder=2)
     ax.plot(xs, plot["lower"], color=BB_CLR, lw=1.0, ls="--",
             label="Lower BB", alpha=0.8, zorder=2)
@@ -997,7 +966,7 @@ def _post_chart_only(symbol: str, sig: dict, chart: bytes):
     }
     payload_json = json.dumps({"embeds": [embed]})
     try:
-        print(f"  [DEBUG] Sending chart to Discord (exact azalyst method)...")
+        print(f"  [DEBUG] Sending chart to Discord...")
         r = _SESSION.post(
             DISCORD_WEBHOOK,
             data={"payload_json": payload_json},
@@ -1005,7 +974,7 @@ def _post_chart_only(symbol: str, sig: dict, chart: bytes):
             timeout=60,
         )
         print(f"  [DEBUG] Chart upload response: HTTP {r.status_code}")
-        if r.status_code == 200 or r.status_code == 204:
+        if r.status_code in (200, 204):
             print(f"  ✅ Chart sent successfully to Discord")
         else:
             print(f"  ! Chart upload returned HTTP {r.status_code}: {r.text[:200]}")
@@ -1054,7 +1023,7 @@ def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
         f"  {_kv('TP1  Fib 1.272', f'{tp1_str}   [{tp1_rr}]')}",
         f"  {_kv('TP2  Fib 1.618', f'{tp2_str}   [{tp2_rr}]')}",
         f"  {_kv('BB-Touch Exit', f'DYNAMIC  ({bb_label} at touch)')}",
-        f"  {_kv(f'  {bb_label} now', f'{bb_ref}   (entry snapshot — band moves every candle)')}",
+        f"  {_kv(f'  {bb_label} now', f'{bb_ref}   (entry snapshot)')}",
         f"  {_SEP}",
         f"  TREND INTELLIGENCE",
         f"  {_kv('Stage',        f'{stage_icon}   Score={score}/100')}",
@@ -1167,7 +1136,7 @@ def discord_summary(trader: PaperTrader):
     _sup  = s["upnl"]
     _swr  = s["win_rate"]
     _sw   = s["wins"]
-    _sl   = s["losses"]
+    _sl_  = s["losses"]
 
     body = "\n".join([
         "  BB SCANNER PAPER PORTFOLIO  –  HOURLY REPORT",
@@ -1178,7 +1147,7 @@ def discord_summary(trader: PaperTrader):
         f"  {_kv('Realised PnL',  f'$ {_srp:>+12,.2f}')}",
         f"  {_kv('Unrealised',    f'$ {_sup:>+12,.2f}')}",
         f"  {_SEP}",
-        f"  {_kv('Win Rate',      f'{_swr}%   ({_sw}W / {_sl}L)')}",
+        f"  {_kv('Win Rate',      f'{_swr}%   ({_sw}W / {_sl_}L)')}",
         f"  {_kv('Open Trades',   str(s['open']))}",
         f"  {_kv('Closed Trades', str(s['closed']))}",
         f"  {_SEP}",
@@ -1208,15 +1177,16 @@ def discord_startup(n_symbols: int, balance: float):
         f"  {_SEP}",
         f"  {_kv('Strategy',       f'BB({BB_PERIOD},{BB_SD})  |  {TIMEFRAME}')}",
         f"  {_kv('Exchange',       'Binance USDT-Margined Perpetuals')}",
+        f"  {_kv('Base URL',       FAPI_BASE)}",
         f"  {_kv('Universe',       f'{n_symbols} active USDT perpetuals')}",
         f"  {_kv('Scan interval',  f'Every {SCAN_INTERVAL // 60} min  ({SCAN_INTERVAL}s)')}",
         f"  {_kv('Leverage',       f'{LEVERAGE}x paper trading')}",
         f"  {_kv('Start balance',  f'$ {balance:>12,.2f}')}",
         f"  {_SEP}",
         "  SIGNAL CONDITIONS",
-        "  LONG  : Upper Band Breakout Pullback (break above → pullback to band → BUY)",
-        "  SHORT : Lower Band Breakdown Pullback (break below → bounce to band → SELL)",
-        "  EXIT  : Band re-touch after extension (exit only — never opens opposite)",
+        "  LONG  : Upper Band Breakout Pullback",
+        "  SHORT : Lower Band Breakdown Pullback",
+        "  EXIT  : Band re-touch after extension",
         "  FILTER: No middle band activity · Min bandwidth · Min breakout distance",
         f"  {_SEP}",
         "  BB Scanner  |  For informational use only",
@@ -1231,7 +1201,7 @@ def discord_startup(n_symbols: int, balance: float):
 # ═══════════════════════════════════════════════════════════════════
 #  ⑩  SCAN LOOP
 # ═══════════════════════════════════════════════════════════════════
-def scan(symbols: list[str], trader: PaperTrader) -> int:
+def scan(symbols: list, trader: PaperTrader) -> int:
     found  = 0
     prices = {}
 
@@ -1274,7 +1244,7 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
 
                         chart = make_chart(df, sig, tgt, sym)
                         if chart is None:
-                            print(f"  [WARN] Chart skipped for {sym} – matplotlib not available.")
+                            print(f"  [WARN] Chart skipped for {sym}.")
                         else:
                             chart_size_kb = len(chart)/1024
                             print(f"  [DEBUG] Chart generated: {chart_size_kb:.1f} KB")
@@ -1309,7 +1279,7 @@ def scan(symbols: list[str], trader: PaperTrader) -> int:
             print(f"  ! {sym}: {ex}")
             time.sleep(REQUEST_DELAY)
 
-    # Auto-close trades
+    # Auto-close open trades
     df_dict = {}
     for t in trader.open_trades:
         sym = t["symbol"]
@@ -1349,16 +1319,19 @@ def main():
     print(f"  Paper Portfolio  →  Balance: ${s['balance']:,.2f}  "
           f"·  Open: {s['open']}  ·  Closed: {s['closed']}")
 
+    # FIX: multi-endpoint fallback + bounded exponential backoff
     symbols = []
     backoff = 5
     while not symbols:
         try:
             print("  Loading Binance symbols...")
             symbols = get_symbols()
-            print(f"  {len(symbols)} USDT perpetuals loaded.")
+            if symbols:
+                print(f"  {len(symbols)} USDT perpetuals loaded.")
         except Exception as ex:
             print(f"  ! Symbol fetch failed ({ex.__class__.__name__}: {ex}). "
                   f"Retrying in {backoff}s...")
+        if not symbols:
             time.sleep(backoff)
             backoff = min(backoff * 2, 120)
     print()
@@ -1418,22 +1391,13 @@ def main():
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  ⑫  ENTRYPOINT  —  environment-aware startup
+#  ⑫  ENTRYPOINT
 # ═══════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    # GitHub Actions sets GITHUB_ACTIONS=true automatically.
-    # In CI we NEVER want a blocking Flask web server — run the scanner
-    # directly and let MAX_LOOPS control how many scans are done.
-    #
-    # Flask / Render mode only activates when PORT is set AND we are NOT
-    # running inside GitHub Actions (or any other CI environment).
     IS_CI     = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
     IS_RENDER = os.environ.get("PORT") is not None and not IS_CI
 
     if IS_RENDER and HAS_FLASK:
-        # ── Render / web-hosting mode ──────────────────────────────────
-        # Scanner runs in a background daemon thread.
-        # Flask blocks the main thread serving health-check routes.
         @app.route("/")
         def health():
             return jsonify({"status": "running", "service": "BB Scanner"})
@@ -1469,20 +1433,18 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), threaded=True)
 
     else:
-        # ── Standalone mode: GitHub Actions, Termux, local PC ─────────
-        # Run scanner in the main thread and exit when done.
         if IS_CI:
             print("  [CI] GitHub Actions detected — Flask server disabled. "
                   "Running scanner directly.")
         while True:
             try:
                 main()
-                break   # clean exit after MAX_LOOPS or Ctrl+C
+                break
             except KeyboardInterrupt:
                 break
             except Exception as ex:
                 print(f"\n  💥 Fatal error: {ex.__class__.__name__}: {ex}")
                 if IS_CI:
-                    raise   # fail fast in CI — don't loop forever
+                    raise
                 print("  Restarting in 30s...")
                 time.sleep(30)
