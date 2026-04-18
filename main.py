@@ -234,7 +234,7 @@ if not os.path.exists(CHARTS_DIR):
 #                  also hits dapi.binance.com coin-futures and
 #                  times-out in regions where that endpoint is blocked)
 # ═══════════════════════════════════════════════════════════════════
-FAPI_BASE = "https://fapi.binance.com"      # USDT-margined perpetuals only
+FAPI_BASE = os.environ.get("BINANCE_PROXY_URL", "https://fapi.binance.com")      # USDT-margined perpetuals only
 
 _SESSION = requests.Session()
 _SESSION.headers.update({"Accept": "application/json"})
@@ -1716,9 +1716,14 @@ def main():
 
     scan_no      = 0
     last_summary = time.time()
+    max_loops    = int(os.environ.get("MAX_LOOPS", "0"))
 
     while True:
         scan_no += 1
+        if max_loops > 0 and scan_no > max_loops:
+            print(f"\n  [INFO] Reached MAX_LOOPS ({max_loops}). Exiting...")
+            break
+
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n{'─'*66}")
         print(f"  SCAN #{scan_no:04d}  ·  {ts} UTC")
