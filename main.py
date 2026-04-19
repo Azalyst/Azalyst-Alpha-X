@@ -58,26 +58,26 @@ SCAN_INTERVAL    = 300
 LOOKBACK_WINDOW  = 300
 REQUEST_DELAY    = 0.15
 SWING_LOOKBACK   = 60
-TOUCH_TOL        = 0.0025
+TOUCH_TOL        = 0.003       # relaxed from 0.0025
 
 BREAKOUT_LOOKBACK = 30
-ENTRY_WINDOW      = 10
+ENTRY_WINDOW      = 15         # relaxed from 10
 
 MIN_BREAKOUT_PCT  = 0.002
 MIN_BANDWIDTH_PCT = 0.008
 
 RSI_PERIOD       = 14
-RSI_LONG_1H      = 60
-RSI_LONG_4H      = 55
-RSI_SHORT_1H     = 40
-RSI_SHORT_4H     = 45
+RSI_LONG_1H      = 57          # relaxed from 60
+RSI_LONG_4H      = 52          # relaxed from 55
+RSI_SHORT_1H     = 43          # relaxed from 40
+RSI_SHORT_4H     = 48          # relaxed from 45
 
 TREND_STAGE_MID_4H   = 68
 TREND_STAGE_LATE_4H  = 80
 SKIP_LATE_STAGE      = True
-VOLUME_SURGE_MULT    = 1.5
+VOLUME_SURGE_MULT    = 1.3     # relaxed from 1.5
 VOLUME_LOOKBACK      = 20
-RSI_VELOCITY_MIN     = 4.0
+RSI_VELOCITY_MIN     = 3.0     # relaxed from 4.0
 
 INITIAL_BALANCE  = 10_000.0
 LEVERAGE         = 30
@@ -85,7 +85,7 @@ RISK_PCT         = 0.02
 MAX_MARGIN_PCT   = 0.25
 SIGNAL_COOLDOWN  = 300
 SUMMARY_EVERY    = 3600
-QWEN_EVERY       = 4 * 3600   # Qwen analysis interval (4 hours)
+QWEN_EVERY       = 4 * 3600
 
 MAX_OPEN_TRADES  = 5
 
@@ -127,27 +127,27 @@ _SESSION.headers.update({"User-Agent": "DiscordBot/1.0"})
 # ═══════════════════════════════════════════════════════════════════
 #  ③  SIGNAL COOLDOWN & VALIDATION
 # ═══════════════════════════════════════════════════════════════════
-_last_signal: dict = {}
-_signal_cache: dict = {}
+_last_signal  = {}
+_signal_cache = {}
 
-def on_cooldown(sym: str) -> bool:
+def on_cooldown(sym):
     return (time.time() - _last_signal.get(sym, 0)) < SIGNAL_COOLDOWN
 
-def mark_cooldown(sym: str):
+def mark_cooldown(sym):
     _last_signal[sym] = time.time()
 
 SIGNAL_FRESHNESS    = 60
 SIGNAL_SLIPPAGE_PCT = 0.02
 
-def is_signal_valid(sym: str, current_price: float) -> bool:
+def is_signal_valid(sym, current_price):
     if sym not in _signal_cache:
         return False
-    cached = _signal_cache[sym]
-    age = time.time() - cached["timestamp"]
+    cached   = _signal_cache[sym]
+    age      = time.time() - cached["timestamp"]
     if age > SIGNAL_FRESHNESS:
         print(f"    [REJECT] {sym}: Signal too old ({age:.0f}s > {SIGNAL_FRESHNESS}s)")
         return False
-    entry = cached["entry_price"]
+    entry    = cached["entry_price"]
     slippage = abs(current_price - entry) / entry
     if slippage > SIGNAL_SLIPPAGE_PCT:
         print(f"    [REJECT] {sym}: Price slipped {slippage*100:.2f}%")
@@ -155,17 +155,17 @@ def is_signal_valid(sym: str, current_price: float) -> bool:
     print(f"    [VALID] {sym}: Signal fresh ({age:.0f}s old), slip {slippage*100:.2f}%")
     return True
 
-def cache_signal(sym: str, sig: dict, current_price: float):
+def cache_signal(sym, sig, current_price):
     _signal_cache[sym] = {
-        "signal": sig,
-        "timestamp": time.time(),
-        "entry_price": current_price
+        "signal":       sig,
+        "timestamp":    time.time(),
+        "entry_price":  current_price,
     }
 
 # ═══════════════════════════════════════════════════════════════════
 #  ④  DATA  —  get_symbols tries all fallback endpoints
 # ═══════════════════════════════════════════════════════════════════
-def get_symbols() -> list:
+def get_symbols():
     global FAPI_BASE
     for base in _FAPI_FALLBACKS:
         try:
@@ -199,7 +199,7 @@ def get_symbols() -> list:
     return []
 
 
-def _raw_symbol(ccxt_sym: str) -> str:
+def _raw_symbol(ccxt_sym):
     return ccxt_sym.replace("/", "")
 
 
@@ -209,7 +209,7 @@ _TF_MAP = {
     "12h": "12h", "1d": "1d", "3d": "3d", "1w": "1w", "1M": "1M",
 }
 
-def fetch_df(symbol: str):
+def fetch_df(symbol):
     try:
         params = {
             "symbol":   _raw_symbol(symbol),
@@ -220,7 +220,7 @@ def fetch_df(symbol: str):
                             params=params, timeout=10)
         resp.raise_for_status()
         raw  = resp.json()
-        df = pd.DataFrame(raw, columns=[
+        df   = pd.DataFrame(raw, columns=[
             "time","open","high","low","close","volume",
             "close_time","quote_vol","trades",
             "taker_buy_base","taker_buy_quote","ignore"
@@ -236,15 +236,15 @@ def fetch_df(symbol: str):
 # ═══════════════════════════════════════════════════════════════════
 #  ⑤  INDICATORS
 # ═══════════════════════════════════════════════════════════════════
-def add_bb(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
+def add_bb(df):
+    df        = df.copy()
     df["mid"]   = df["close"].rolling(BB_PERIOD).mean()
     df["std"]   = df["close"].rolling(BB_PERIOD).std(ddof=0)
     df["upper"] = df["mid"] + BB_SD * df["std"]
     df["lower"] = df["mid"] - BB_SD * df["std"]
     return df.dropna().reset_index(drop=True)
 
-def calc_rsi(closes: pd.Series, period: int = RSI_PERIOD) -> float:
+def calc_rsi(closes, period=RSI_PERIOD):
     if len(closes) < period + 1:
         return 50.0
     delta  = closes.diff().dropna()
@@ -257,21 +257,21 @@ def calc_rsi(closes: pd.Series, period: int = RSI_PERIOD) -> float:
     rs = avg_g / avg_l
     return round(100 - (100 / (1 + rs)), 2)
 
-def fetch_mtf_rsi(symbol: str) -> dict:
+def fetch_mtf_rsi(symbol):
     result = {"rsi_1h": 50.0, "rsi_4h": 50.0, "rsi_4h_prev3": 50.0}
     for tf, rsi_key, prev_key in [
         ("1h", "rsi_1h",  None),
         ("4h", "rsi_4h",  "rsi_4h_prev3"),
     ]:
         try:
-            limit = RSI_PERIOD * 3 + 5
+            limit  = RSI_PERIOD * 3 + 5
             params = {
                 "symbol":   _raw_symbol(symbol),
                 "interval": tf,
                 "limit":    limit,
             }
-            resp = _SESSION.get(f"{FAPI_BASE}/fapi/v1/klines",
-                                params=params, timeout=10)
+            resp   = _SESSION.get(f"{FAPI_BASE}/fapi/v1/klines",
+                                  params=params, timeout=10)
             resp.raise_for_status()
             raw    = resp.json()
             closes = pd.Series([float(c[4]) for c in raw])
@@ -283,8 +283,8 @@ def fetch_mtf_rsi(symbol: str) -> dict:
     return result
 
 
-def score_trend(symbol: str, direction: str, df_1m: pd.DataFrame) -> dict:
-    mtf = fetch_mtf_rsi(symbol)
+def score_trend(symbol, direction, df_1m):
+    mtf      = fetch_mtf_rsi(symbol)
     r1h      = mtf["rsi_1h"]
     r4h      = mtf["rsi_4h"]
     r4h_prev = mtf["rsi_4h_prev3"]
@@ -365,7 +365,7 @@ def score_trend(symbol: str, direction: str, df_1m: pd.DataFrame) -> dict:
     }
 
 
-def passes_rsi_filter(symbol: str, direction: str, df_1m: pd.DataFrame = None) -> tuple:
+def passes_rsi_filter(symbol, direction, df_1m=None):
     if df_1m is None:
         mtf = fetch_mtf_rsi(symbol)
         r1h, r4h = mtf["rsi_1h"], mtf["rsi_4h"]
@@ -378,10 +378,10 @@ def passes_rsi_filter(symbol: str, direction: str, df_1m: pd.DataFrame = None) -
     info = score_trend(symbol, direction, df_1m)
     return info["passed"], info
 
-def sw_high(df: pd.DataFrame) -> float:
+def sw_high(df):
     return float(df.iloc[-(SWING_LOOKBACK + 1):-1]["high"].max())
 
-def sw_low(df: pd.DataFrame) -> float:
+def sw_low(df):
     return float(df.iloc[-(SWING_LOOKBACK + 1):-1]["low"].min())
 
 # ═══════════════════════════════════════════════════════════════════
@@ -510,7 +510,7 @@ def short_band_touch(df):
 CHECKERS = [long_band_touch, short_band_touch]
 
 
-def build_targets(df: pd.DataFrame, sig: dict) -> dict:
+def build_targets(df, sig):
     e  = sig["entry"]
     sl = sig["sl"]
     d  = sig["direction"]
@@ -579,7 +579,7 @@ class PaperTrader:
             except OSError:
                 pass
 
-    def open_trade(self, symbol: str, sig: dict, targets: dict):
+    def open_trade(self, symbol, sig, targets):
         e  = sig["entry"]
         sl = sig["sl"]
         sl_pct = abs(e - sl) / e
@@ -633,7 +633,7 @@ class PaperTrader:
         self._save()
         return trade
 
-    def update(self, prices: dict, df_dict: dict = None) -> list:
+    def update(self, prices, df_dict=None):
         still_open, closed = [], []
 
         for t in self.open_trades:
@@ -662,7 +662,7 @@ class PaperTrader:
                         if not t["extended"]:
                             entry_ct = t.get("entry_candle_time")
                             if entry_ct:
-                                entry_ts = pd.Timestamp(entry_ct)
+                                entry_ts    = pd.Timestamp(entry_ct)
                                 cur_is_new  = cur["time"]  > entry_ts
                                 prev_is_new = prev["time"] > entry_ts
                             else:
@@ -685,7 +685,7 @@ class PaperTrader:
                         if not t["extended"]:
                             entry_ct = t.get("entry_candle_time")
                             if entry_ct:
-                                entry_ts = pd.Timestamp(entry_ct)
+                                entry_ts    = pd.Timestamp(entry_ct)
                                 cur_is_new  = cur["time"]  > entry_ts
                                 prev_is_new = prev["time"] > entry_ts
                             else:
@@ -736,7 +736,7 @@ class PaperTrader:
         self._save()
         return closed
 
-    def stats(self) -> dict:
+    def stats(self):
         wins  = [t for t in self.closed_trades if t.get("rpnl", 0) > 0]
         loss  = [t for t in self.closed_trades if t.get("rpnl", 0) <= 0]
         rpnl  = sum(t.get("rpnl",  0) for t in self.closed_trades)
@@ -766,7 +766,7 @@ GRID    = "#1c2333"
 FG      = "#8b949e"
 WHITE   = "#e6edf3"
 
-def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str):
+def make_chart(df, sig, tgt, symbol):
     if not HAS_CHART:
         return None
     plot = df.tail(120).copy().reset_index(drop=True)
@@ -809,7 +809,7 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str):
 
     si = n - 2
     is_long = d == "LONG"
-    y0 = plot.iloc[si]["low"]  * 0.9965 if is_long else plot.iloc[si]["high"] * 1.0035
+    y0    = plot.iloc[si]["low"]  * 0.9965 if is_long else plot.iloc[si]["high"] * 1.0035
     ytext = y0 * 0.993 if is_long else y0 * 1.007
     lbl   = "▲  LONG"  if is_long else "▼  SHORT"
     mcol  = "#22c55e"  if is_long else "#ef4444"
@@ -863,16 +863,16 @@ def make_chart(df: pd.DataFrame, sig: dict, tgt: dict, symbol: str):
 _SEP  = "─" * 44
 _W    = 18
 
-def _kv(label: str, value: str) -> str:
+def _kv(label, value):
     return f"{label:<{_W}}: {value}"
 
-def _rr(entry, target, sl) -> str:
+def _rr(entry, target, sl):
     risk = abs(entry - sl)
     if not risk or target is None:
         return "—"
     return f"{abs(target - entry) / risk:.2f}x R:R"
 
-def _strip_attachment_images(payload: dict) -> dict:
+def _strip_attachment_images(payload):
     clean = json.loads(json.dumps(payload))
     clean.pop("attachments", None)
     for embed in clean.get("embeds", []):
@@ -881,7 +881,7 @@ def _strip_attachment_images(payload: dict) -> dict:
             embed.pop("image", None)
     return clean
 
-def _post(payload: dict, chart: bytes | None = None):
+def _post(payload, chart=None):
     last_error = None
 
     for attempt in range(1, 5):
@@ -948,13 +948,13 @@ def _post(payload: dict, chart: bytes | None = None):
         print(f"  ! Discord error: {last_error}")
 
 
-def _post_chart_only(symbol: str, sig: dict, chart: bytes):
+def _post_chart_only(symbol, sig, chart):
     pair = symbol.replace("/USDT", "") + " / USDT"
     embed = {
-        "title": f"📊 {sig['direction']} {pair} | {sig['condition']}",
-        "color": 2263127 if sig["direction"] == "LONG" else 15728640,
+        "title":       f"📊 {sig['direction']} {pair} | {sig['condition']}",
+        "color":       2263127 if sig["direction"] == "LONG" else 15728640,
         "description": f"Signal: {sig['condition']}\nEntry: {sig['entry']}\nStop Loss: {sig['sl']}",
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp":   datetime.now(timezone.utc).isoformat(),
     }
     payload_json = json.dumps({"embeds": [embed]})
     try:
@@ -975,8 +975,7 @@ def _post_chart_only(symbol: str, sig: dict, chart: bytes):
         print(f"  ! Chart send error ({ex.__class__.__name__}): {ex}")
 
 
-def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
-                               trade: dict, stats: dict, chart_bytes: bytes | None):
+def discord_signal_with_chart(symbol, sig, tgt, trade, stats, chart_bytes):
     d        = sig["direction"]
     is_long  = d == "LONG"
     color    = 0x22c55e if is_long else 0xef4444
@@ -987,22 +986,22 @@ def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
     ts       = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
     pair     = symbol.replace("/USDT", "") + " / USDT"
 
-    tp1_rr      = _rr(e, tgt.get("tp1"), sl)
-    tp2_rr      = _rr(e, tgt.get("tp2"), sl)
-    notional_v  = trade["notional"]
-    margin_v    = trade["margin"]
-    bal_v       = stats["balance"]
-    ret_v       = stats["ret_pct"]
-    win_v       = stats["win_rate"]
-    bb_ref      = tgt["bb_at_entry"]
-    bb_label    = "Upper BB" if is_long else "Lower BB"
+    tp1_rr     = _rr(e, tgt.get("tp1"), sl)
+    tp2_rr     = _rr(e, tgt.get("tp2"), sl)
+    notional_v = trade["notional"]
+    margin_v   = trade["margin"]
+    bal_v      = stats["balance"]
+    ret_v      = stats["ret_pct"]
+    win_v      = stats["win_rate"]
+    bb_ref     = tgt["bb_at_entry"]
+    bb_label   = "Upper BB" if is_long else "Lower BB"
 
-    stage      = sig.get("trend_stage",  "?")
-    score      = sig.get("trend_score",   0)
-    rsi_1h_v   = sig.get("rsi_1h",      50.0)
-    rsi_4h_v   = sig.get("rsi_4h",      50.0)
-    rsi_vel_v  = sig.get("rsi_vel",      0.0)
-    vol_rat_v  = sig.get("vol_ratio",    1.0)
+    stage     = sig.get("trend_stage",  "?")
+    score     = sig.get("trend_score",   0)
+    rsi_1h_v  = sig.get("rsi_1h",      50.0)
+    rsi_4h_v  = sig.get("rsi_4h",      50.0)
+    rsi_vel_v = sig.get("rsi_vel",      0.0)
+    vol_rat_v = sig.get("vol_ratio",    1.0)
     stage_icon = {"EARLY": "🌱 EARLY", "MID": "📈 MID", "LATE": "⚠️ LATE"}.get(stage, stage)
 
     body = "\n".join([
@@ -1040,10 +1039,7 @@ def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
         f"  BB Scanner  |  For informational use only",
     ])
 
-    embed = {
-        "color":       color,
-        "description": f"```\n{body}\n```",
-    }
+    embed   = {"color": color, "description": f"```\n{body}\n```"}
     payload = {
         "content": f"**BB SCANNER  |  NEW SIGNAL  |  {d}  {pair}  |  {sig['condition'].upper()}**",
         "embeds":  [embed],
@@ -1054,15 +1050,15 @@ def discord_signal_with_chart(symbol: str, sig: dict, tgt: dict,
         _post_chart_only(symbol, sig, chart_bytes)
 
 
-def discord_close(trade: dict, stats: dict):
+def discord_close(trade, stats):
     rpnl   = trade.get("rpnl", 0)
     color  = 0x22c55e if rpnl > 0 else 0xef4444
     result = "WIN" if rpnl > 0 else "LOSS"
     pct    = (trade["close_price"] - trade["entry"]) / trade["entry"] * 100
     if trade["direction"] == "SHORT":
         pct = -pct
-    ts     = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
-    pair   = trade["symbol"].replace("/USDT", "") + " / USDT"
+    ts    = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
+    pair  = trade["symbol"].replace("/USDT", "") + " / USDT"
 
     _bal = stats["balance"]
     _ret = stats["ret_pct"]
@@ -1109,7 +1105,7 @@ def discord_close(trade: dict, stats: dict):
     _post(payload)
 
 
-def discord_summary(trader: PaperTrader):
+def discord_summary(trader):
     s  = trader.stats()
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
 
@@ -1122,13 +1118,13 @@ def discord_summary(trader: PaperTrader):
         )
     positions_block = "\n".join(pos_lines) if pos_lines else "  No open positions"
 
-    _sb   = s["balance"]
-    _sr   = s["ret_pct"]
-    _srp  = s["rpnl"]
-    _sup  = s["upnl"]
-    _swr  = s["win_rate"]
-    _sw   = s["wins"]
-    _sl_  = s["losses"]
+    _sb  = s["balance"]
+    _sr  = s["ret_pct"]
+    _srp = s["rpnl"]
+    _sup = s["upnl"]
+    _swr = s["win_rate"]
+    _sw  = s["wins"]
+    _sl_ = s["losses"]
 
     body = "\n".join([
         "  BB SCANNER PAPER PORTFOLIO  –  HOURLY REPORT",
@@ -1160,23 +1156,33 @@ def discord_summary(trader: PaperTrader):
     _post(payload)
 
 
-def discord_qwen_report(analysis: dict):
-    """Send Qwen analysis results to Discord."""
-    ts    = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
-    summ  = analysis.get("summary", "No summary.")
-    act   = analysis.get("action",  "No action.")
-    upd   = analysis.get("parameter_updates", {})
-    upd_str = "\n".join([f"  {k} → {v}" for k, v in upd.items()]) if upd else "  No changes applied."
+def discord_qwen_report(analysis):
+    ts     = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
+    summ   = str(analysis.get("summary", "No summary."))[:400]
+    act    = str(analysis.get("action",  "No action."))[:300]
+    upd    = analysis.get("parameter_updates", {})
+    if not isinstance(upd, dict):
+        upd = {}
+    applied = analysis.get("_applied_changes", {})
+    if not isinstance(applied, dict):
+        applied = {}
+
+    if applied:
+        upd_str = "\n".join([f"  {k}: {v}" for k, v in applied.items()])
+    elif upd:
+        upd_str = "\n".join([f"  {k} → {v}" for k, v in upd.items()])
+    else:
+        upd_str = "  No changes applied."
 
     body = "\n".join([
-        "  🤖 QWEN AI ANALYSIS REPORT",
+        "  QWEN AI ANALYSIS REPORT",
         f"  {ts}",
         f"  {_SEP}",
         "  SUMMARY",
-        f"  {summ[:400]}",
+        f"  {summ}",
         f"  {_SEP}",
         "  RECOMMENDED ACTION",
-        f"  {act[:300]}",
+        f"  {act}",
         f"  {_SEP}",
         "  PARAMETER UPDATES APPLIED",
         upd_str,
@@ -1185,13 +1191,13 @@ def discord_qwen_report(analysis: dict):
     ])
 
     payload = {
-        "content": "**BB SCANNER  |  🤖 QWEN AI ANALYSIS  |  4-HOUR REPORT**",
+        "content": "**BB SCANNER  |  QWEN AI ANALYSIS  |  4-HOUR REPORT**",
         "embeds":  [{"color": 0x9333ea, "description": f"```\n{body}\n```"}],
     }
     _post(payload)
 
 
-def discord_startup(n_symbols: int, balance: float):
+def discord_startup(n_symbols, balance):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
 
     body = "\n".join([
@@ -1211,7 +1217,13 @@ def discord_startup(n_symbols: int, balance: float):
         "  LONG  : Upper Band Breakout Pullback",
         "  SHORT : Lower Band Breakdown Pullback",
         "  EXIT  : Band re-touch after extension",
-        "  FILTER: No middle band activity · Min bandwidth · Min breakout distance",
+        "  FILTER: No middle band activity, Min bandwidth, Min breakout distance",
+        f"  {_SEP}",
+        f"  {_kv('RSI LONG  1h/4h',  f'>= {RSI_LONG_1H} / >= {RSI_LONG_4H}')}",
+        f"  {_kv('RSI SHORT 1h/4h',  f'<= {RSI_SHORT_1H} / <= {RSI_SHORT_4H}')}",
+        f"  {_kv('Volume surge min', f'{VOLUME_SURGE_MULT}x')}",
+        f"  {_kv('Entry window',     f'{ENTRY_WINDOW} candles')}",
+        f"  {_kv('Touch tolerance',  f'{TOUCH_TOL*100:.2f}%')}",
         f"  {_SEP}",
         "  BB Scanner  |  For informational use only",
     ])
@@ -1226,25 +1238,44 @@ def discord_startup(n_symbols: int, balance: float):
 #  ⑩  QWEN AGENT RUNNER (called from main loop every 4h)
 # ═══════════════════════════════════════════════════════════════════
 def run_qwen_agent():
-    """Import and run Qwen analysis. Sends result to Discord."""
     try:
-        print("\n  🤖 Running Qwen AI analysis...")
+        print("\n  Running Qwen AI analysis...")
         from qwen_agent import analyze_and_fix
         analysis = analyze_and_fix()
         if analysis:
             discord_qwen_report(analysis)
-            print("  ✅ Qwen analysis complete and sent to Discord.")
+            print("  Qwen analysis complete and sent to Discord.")
         else:
-            print("  ℹ️  Qwen agent: nothing to report this cycle.")
+            # Still send a report so Discord doesn't just show the title with no body
+            discord_qwen_report({
+                "summary": "No recent trades to analyze this cycle. Scanner is running normally.",
+                "action":  "No parameter changes required. Waiting for next trade cycle.",
+                "parameter_updates": {},
+                "_applied_changes": {},
+            })
+            print("  Qwen agent: nothing to report this cycle.")
     except ImportError:
         print("  [WARN] qwen_agent.py not found. Skipping Qwen analysis.")
+        discord_qwen_report({
+            "summary": "qwen_agent.py not found. Please ensure the file is deployed.",
+            "action":  "Upload qwen_agent.py to the same directory as main.py.",
+            "parameter_updates": {},
+            "_applied_changes": {},
+        })
     except Exception as ex:
-        print(f"  ! Qwen analysis failed: {ex.__class__.__name__}: {ex}")
+        err_msg = f"{ex.__class__.__name__}: {ex}"
+        print(f"  ! Qwen analysis failed: {err_msg}")
+        discord_qwen_report({
+            "summary": f"Qwen agent error: {err_msg}",
+            "action":  "Check Railway logs for details. Verify QWEN_API_KEY is set if using AI analysis.",
+            "parameter_updates": {},
+            "_applied_changes": {},
+        })
 
 # ═══════════════════════════════════════════════════════════════════
 #  ⑪  SCAN LOOP
 # ═══════════════════════════════════════════════════════════════════
-def scan(symbols: list, trader: PaperTrader) -> int:
+def scan(symbols, trader):
     found  = 0
     prices = {}
 
@@ -1259,7 +1290,7 @@ def scan(symbols: list, trader: PaperTrader) -> int:
             prices[sym] = float(df.iloc[-1]["close"])
 
             last = df.iloc[-1]
-            mid_zone = (last["close"] > last["lower"] and last["close"] < last["upper"])
+            mid_zone  = (last["close"] > last["lower"] and last["close"] < last["upper"])
             near_upper = abs(last["close"] - last["upper"]) / last["upper"] < TOUCH_TOL * 3
             near_lower = abs(last["close"] - last["lower"]) / abs(last["lower"]) < TOUCH_TOL * 3
             in_dead_zone = mid_zone and not near_upper and not near_lower
@@ -1289,7 +1320,7 @@ def scan(symbols: list, trader: PaperTrader) -> int:
                         if chart is None:
                             print(f"  [WARN] Chart skipped for {sym}.")
                         else:
-                            chart_size_kb = len(chart)/1024
+                            chart_size_kb = len(chart) / 1024
                             print(f"  [DEBUG] Chart generated: {chart_size_kb:.1f} KB")
                             try:
                                 chart_file = os.path.join(
@@ -1310,7 +1341,7 @@ def scan(symbols: list, trader: PaperTrader) -> int:
                         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
                         stage_tag = sig.get("trend_stage", "?")
                         score_tag = sig.get("trend_score", 0)
-                        print(f"  [{ts}] 🔔 {sig['direction']} {sym}  "
+                        print(f"  [{ts}] SIGNAL {sig['direction']} {sym}  "
                               f"Entry={sig['entry']}  SL={sig['sl']}  "
                               f"[{stage_tag} score={score_tag}]")
                         break
@@ -1341,7 +1372,7 @@ def scan(symbols: list, trader: PaperTrader) -> int:
     closed = trader.update(prices, df_dict if df_dict else None)
     for t in closed:
         rpnl = t.get("rpnl", 0)
-        print(f"  💰 CLOSED {t['id']} {t['symbol']}  {t['close_reason']}"
+        print(f"  CLOSED {t['id']} {t['symbol']}  {t['close_reason']}"
               f"  PnL=${rpnl:+.2f}")
         discord_close(t, trader.stats())
 
@@ -1389,8 +1420,6 @@ def main():
 
     scan_no      = 0
     last_summary = time.time()
-    # Offset Qwen so it doesn't fire on the very first scan,
-    # but does fire after the first 4 hours of operation.
     last_qwen    = time.time()
     max_loops    = int(os.environ.get("MAX_LOOPS", "0"))
 
@@ -1408,17 +1437,16 @@ def main():
         try:
             n = scan(symbols, trader)
             s = trader.stats()
-            print(f"\n  ✅  Scan #{scan_no:04d} complete  ·  Signals: {n}")
-            print(f"  💼  Balance: ${s['balance']:,.2f}  "
+            print(f"\n  Scan #{scan_no:04d} complete  ·  Signals: {n}")
+            print(f"  Balance: ${s['balance']:,.2f}  "
                   f"Return: {s['ret_pct']:+.2f}%  "
                   f"Open: {s['open']}  Closed: {s['closed']}")
 
         except KeyboardInterrupt:
             raise
         except Exception as ex:
-            print(f"\n  ❌ Scan error ({ex.__class__.__name__}): {ex}")
+            print(f"\n  Scan error ({ex.__class__.__name__}): {ex}")
 
-        # Hourly portfolio summary
         if time.time() - last_summary >= SUMMARY_EVERY:
             try:
                 discord_summary(trader)
@@ -1426,7 +1454,6 @@ def main():
                 print(f"  ! Summary send failed: {ex}")
             last_summary = time.time()
 
-        # Qwen AI analysis every 4 hours
         if time.time() - last_qwen >= QWEN_EVERY:
             run_qwen_agent()
             last_qwen = time.time()
@@ -1477,8 +1504,8 @@ if __name__ == "__main__":
 
         scanner_thread = threading.Thread(target=main, daemon=True)
         scanner_thread.start()
-        print("  🚀 Scanner started in background thread")
-        print(f"  🌐 Flask server starting on port {os.environ.get('PORT', 8000)}")
+        print("  Scanner started in background thread")
+        print(f"  Flask server starting on port {os.environ.get('PORT', 8000)}")
 
         import logging
         logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -1486,8 +1513,7 @@ if __name__ == "__main__":
 
     else:
         if IS_CI:
-            print("  [CI] GitHub Actions detected — Flask server disabled. "
-                  "Running scanner directly.")
+            print("  [CI] GitHub Actions detected — Flask server disabled.")
         while True:
             try:
                 main()
@@ -1495,7 +1521,7 @@ if __name__ == "__main__":
             except KeyboardInterrupt:
                 break
             except Exception as ex:
-                print(f"\n  💥 Fatal error: {ex.__class__.__name__}: {ex}")
+                print(f"\n  Fatal error: {ex.__class__.__name__}: {ex}")
                 if IS_CI:
                     raise
                 print("  Restarting in 30s...")
